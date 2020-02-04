@@ -1,2 +1,2 @@
-# sfma
+# SFMA
 Stochastic Frontier Meta-Analysis
