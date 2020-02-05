@@ -41,11 +41,11 @@ class Data:
         """
         # pass in data
         self.df = df if u_id is None else df.sort_values(u_id)
-        self.obs = utils.get_columns(df, obs)
-        self.obs_se = utils.get_columns(df, obs_se)
-        self.covs = utils.get_columns(df, covs)
-        self.u_id = utils.get_columns(df, u_id)
-        self.v_id = utils.get_columns(df, v_id)
+        self.obs = utils.get_columns(self.df, obs)
+        self.obs_se = utils.get_columns(self.df, obs_se)
+        self.covs = utils.get_columns(self.df, covs)
+        self.u_id = utils.get_columns(self.df, u_id)
+        self.v_id = utils.get_columns(self.df, v_id)
 
         if add_intercept:
             if 'intercept' in self.covs:
@@ -59,9 +59,9 @@ class Data:
 
         # grouping structure
         if self.u_id.empty:
-            self.u_id['u_id'] = np.arange(self.num_obs)
+            self.u_id = pd.Series(np.arange(self.num_obs))
         if self.v_id.empty:
-            self.v_id['v_id'] = np.arange(self.num_obs)
+            self.v_id = pd.Series(np.arange(self.num_obs))
 
         self.unique_u_id, \
         self.u_group_sizes = np.unique(self.u_id, return_counts=True)

@@ -22,7 +22,7 @@ def get_columns(df, col_names):
             The data frame contains the columns.
     """
     assert isinstance(df, pd.DataFrame)
-    if hasattr(col_names, '__iter__'):
+    if isinstance(col_names, list):
         assert all([isinstance(col_name, str) and col_name in df
                     for col_name in col_names])
     else:
@@ -30,6 +30,6 @@ def get_columns(df, col_names):
                                        col_names in df)
 
     if col_names is None:
-        return df[[]]
+        return df[[]].copy()
     else:
-        return df[col_names]
+        return df[col_names].copy()
