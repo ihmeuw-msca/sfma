@@ -5,8 +5,6 @@
     `data` module of the `sfma` package.
 """
 import numpy as np
-import pandas as pd
-import warnings
 from . import utils
 
 
@@ -14,80 +12,143 @@ class Data:
     """Data structure for easy processing
     """
     def __init__(self, df,
-                 obs=None,
-                 obs_se=None,
-                 covs=None,
-                 u_id=None,
-                 v_id=None,
+                 col_obs=None,
+                 col_obs_se=None,
+                 col_covs=None,
+                 col_u_id=None,
+                 col_v_id=None,
                  add_intercept=False):
         """Constructor of Data
 
         Args:
             df (pandas.DataFrame):
                 Dataframe from csv file that store the data.
-            obs (str | None, optional):
+            col_obs (str | None, optional):
                 Column name that store the observations of the problem.
-            obs_se (str | None, optional):
+            col_obs_se (str | None, optional):
                 Column name that store the standard error of the observations.
-            covs (list{str} | None, optional):
+            col_covs (list{str} | None, optional):
                 List of column names of potential covariates.
-            u_id (str | None, optional):
+            col_u_id (str | None, optional):
                 Column name that store the grouping id of the random effects.
-            v_id (str | None, optional):
+            col_v_id (str | None, optional):
                 Column name that store the grouping id of the
                 efficiency/inefficiency.
             add_intercept (bool, optional):
                 If `True`, add intercept to the current covariates.
         """
-        # pass in data
-        self.df = df if u_id is None else df.sort_values(u_id)
-        self.obs = utils.get_columns(self.df, obs)
-        self.obs_se = utils.get_columns(self.df, obs_se)
-        self.covs = utils.get_columns(self.df, covs)
-        self.u_id = utils.get_columns(self.df, u_id)
-        self.v_id = utils.get_columns(self.df, v_id)
+        # pass in column names
+        self.col_names = []
+        self.col_obs = utils.input_col_names(col_obs,
+                                             append_to=self.col_names)
+        self.col_obs_se = utils.input_col_names(col_obs_se,
+                                                append_to=self.col_names)
+        self.col_covs = utils.input_col_names(col_covs,
+                                              append_to=self.col_names)
+        self.col_u_id = utils.input_col_names(col_u_id,
+                                              append_to=self.col_names,
+                                              default='u_id')
+        self.col_v_id = utils.input_col_names(col_v_id,
+                                              append_to=self.col_names,
+                                              default='v_id')
 
-        if add_intercept:
-            if 'intercept' in self.covs:
-                warnings.warn("Intercept already exist, no need to add.")
-            else:
-                self.covs['intercept'] = np.ones(self.df.shape[0])
+        if add_intercept and 'intercept' not in self.col_names:
+            self.col_covs.append('intercept')
+            self.col_names.append('intercept')
 
-        # dimensions
-        self.num_obs = self.df.shape[0]
-        self.num_covs = self.covs.shape[1]
+        # pass in data frame
+        self.df = None
+        self.update_df(df)
 
-        # grouping structure
-        if self.u_id.empty:
-            self.u_id = pd.Series(np.arange(self.num_obs))
-        if self.v_id.empty:
-            self.v_id = pd.Series(np.arange(self.num_obs))
+    def update_df(self, df):
+        """Update the current data frame.
 
-        self.unique_u_id, \
-        self.u_group_sizes = np.unique(self.u_id, return_counts=True)
-        self.num_u_groups = self.unique_u_id.size
+        Args:
+            df (pandas.DataFrame):
+                New input data frame.
+        """
+        # add columns if necessary
+        df = df.copy()
+        if 'intercept' in self.col_covs and 'intercept' not in df:
+            df['intercept'] = np.ones(df.shape[0])
+        if self.col_u_id not in df:
+            df[self.col_u_id] = np.arange(df.shape[0])
+        if self.col_v_id not in df:
+            df[self.col_v_id] = np.arange(df.shape[0])
 
-        self.unique_v_id, \
-        self.v_group_sizes = np.unique(self.v_id, return_counts=True)
-        self.num_v_groups = self.unique_v_id.size
+        self.df = df[self.col_names].copy()
 
-        # group index
-        self.u_group_idx = {
+    @property
+    def num_obs(self):
+        return self.df.shape[0]
+
+    @property
+    def num_covs(self):
+        return self.covs.shape[1]
+
+    @property
+    def num_u_groups(self):
+        return self.u_group_sizes.size
+
+    @property
+    def num_v_groups(self):
+        return self.v_group_sizes.size
+
+    @property
+    def obs(self):
+        return utils.get_columns(self.df, self.col_obs)
+
+    @property
+    def obs_se(self):
+        return utils.get_columns(self.df, self.col_obs_se)
+
+    @property
+    def covs(self):
+        return utils.get_columns(self.df, self.col_covs)
+
+    @property
+    def u_id(self):
+        return utils.get_columns(self.df, self.col_u_id)
+
+    @property
+    def v_id(self):
+        return utils.get_columns(self.df, self.col_v_id)
+
+    @property
+    def u_group_sizes(self):
+        return self.u_id.value_counts()
+
+    @property
+    def v_group_sizes(self):
+        return self.v_id.value_counts()
+
+    @property
+    def u_group_idx(self):
+        return {
             i: np.where(self.u_id == i)[0]
-            for i in self.unique_u_id
+            for i in self.u_group_sizes.index
         }
-        self.v_group_idx = {
+
+    @property
+    def v_group_idx(self):
+        return {
             i: np.where(self.v_id == i)[0]
-            for i in self.unique_v_id
+            for i in self.u_group_sizes.index
         }
+
+    def sort_by_u_id(self):
+        self.df.sort_values(self.col_u_id, inplace=True)
+
+    def sort_by_v_id(self):
+        self.df.sort_values(self.col_v_id, inplace=True)
 
     def __repr__(self):
         """Summary of the object.
         """
         dimension_summary = [
-            "number of observations: %i"%self.num_obs,
-            "number of covariates  : %i"%self.num_covs,
-            "number of u groups    : %i"%self.num_u_groups,
-            "number of v groups    : %i"%self.num_v_groups,
+            "number of observations: %i" % self.num_obs,
+            "number of covariates  : %i" % self.num_covs,
+            "number of u groups    : %i" % self.num_u_groups,
+            "number of v groups    : %i" % self.num_v_groups,
         ]
         return "\n".join(dimension_summary)
