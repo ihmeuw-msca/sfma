@@ -54,3 +54,19 @@ def test_input_col_names_append_to(col_names, full_col_names):
         assert 'col0' in full_col_names and 'col2' in full_col_names
         if isinstance(col_names, list):
             assert 'col1' in full_col_names
+
+
+def test_sizes_to_indices(sizes, indices):
+    my_indices = utils.sizes_to_indices(sizes)
+    assert all([np.allclose(my_indices[i], indices[i])
+                for i in range(len(sizes))])
+
+
+@pytest.mark.parametrize("sizes", [np.array([1, 2, 3])])
+@pytest.mark.parametrize("indices", [[np.arange(0, 1),
+                                      np.arange(1, 3),
+                                      np.arange(3, 6)]])
+def test_sizes_to_indices(sizes, indices):
+    my_indices = utils.sizes_to_indices(sizes)
+    assert all([np.allclose(my_indices[i], indices[i])
+                for i in range(len(sizes))])
