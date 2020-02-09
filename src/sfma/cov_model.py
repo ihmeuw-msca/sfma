@@ -96,7 +96,7 @@ class CovModel:
         self.spline_knots = np.unique(self.spline_knots)
         if np.min(self.spline_knots) > 0.0:
             self.spline_knots = np.insert(self.spline_knots, 0, 0.0)
-        if np.min(self.spline_knots) < 1.0:
+        if np.max(self.spline_knots) < 1.0:
             self.spline_knots = np.append(self.spline_knots, 1.0)
 
     def update_attr(self, **kwargs):
@@ -124,6 +124,16 @@ class CovModel:
     @property
     def num_random_vars(self):
         return self.num_fixed_vars if self.add_u else 0
+
+    @property
+    def num_constraints(self):
+        if not self.add_spline:
+            return 0
+        else:
+            return self.spline_num_constraint_points*(
+                (self.spline_monotonicity is not None) +
+                (self.spline_convexity is not None)
+            )
 
     def create_spline(self, data):
         """Create spline given current spline parameters.

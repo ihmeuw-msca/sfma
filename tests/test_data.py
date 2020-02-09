@@ -2,7 +2,7 @@
 """
     test_data
     ~~~~~~~~~
-    Test `data` model for `sfma` package.
+    Test `data` module for `sfma` package.
 """
 import numpy as np
 import pandas as pd
