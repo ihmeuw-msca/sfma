@@ -167,6 +167,11 @@ class MEModel:
         beta, gamma, w = lt.fitModel()
         u = lt.estimateRE()
         me_pred = y - self.x.dot(beta) - np.sum(z*gamma, axis=1)
+        self.update_params(beta=beta,
+                           gamma=gamma,
+                           u=u,
+                           weights=w,
+                           me_pred=me_pred)
 
     def init_params(self):
         """Initialize the parameters.
@@ -211,7 +216,11 @@ class MEModel:
             }
 
         if u is not None:
-            self.u = pd.DataFrame(u, index=self.model.data.u_group_sizes.index)
-            # TODO
+            self.model.u = pd.DataFrame(
+                u, index=self.model.data.u_group_sizes.index)
 
+        if weights is not None:
+            self.model.data['weights'] = weights
 
+        if me_pred is not None:
+            self.model.data['me_pred'] = me_pred

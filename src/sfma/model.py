@@ -57,6 +57,11 @@ class Model:
         self.me_model = MEModel(self)
         self.ie_model = IEModel(self)
 
+        # initialize the parameter
+        self.me_model.init_params()
+        self.ie_model.init_params()
+
+
     def fit(self):
         """Fit the model.
         """
