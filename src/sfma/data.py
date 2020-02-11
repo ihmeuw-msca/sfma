@@ -77,6 +77,9 @@ class Data:
             df[self.col_v_id] = np.arange(df.shape[0])
 
         self.df = df[self.col_names].copy()
+        self.df['me_pred'] = np.nan
+        self.df['ie_pred'] = np.nan
+        self.df['weights'] = 1.0
 
     @property
     def num_obs(self):
@@ -115,12 +118,24 @@ class Data:
         return utils.get_columns(self.df, self.col_v_id)
 
     @property
+    def me_pred(self):
+        return utils.get_columns(self.df, 'me_pred')
+
+    @property
+    def ie_pred(self):
+        return utils.get_columns(self.df, 'ie_pred')
+
+    @property
+    def weights(self):
+        return utils.get_columns(self.df, 'weights')
+
+    @property
     def u_group_sizes(self):
-        return self.u_id.value_counts()
+        return self.u_id.value_counts().sort_index()
 
     @property
     def v_group_sizes(self):
-        return self.v_id.value_counts()
+        return self.v_id.value_counts().sort_index()
 
     @property
     def u_group_idx(self):

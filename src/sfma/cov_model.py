@@ -112,7 +112,7 @@ class CovModel:
         self.check_attr()
 
     @property
-    def num_fixed_vars(self):
+    def num_vars(self):
         if self.add_spline:
             n = self.spline_knots.size - \
                 self.spline_l_linear - self.spline_r_linear + \
@@ -120,10 +120,6 @@ class CovModel:
         else:
             n = 1
         return n
-
-    @property
-    def num_random_vars(self):
-        return self.num_fixed_vars if self.add_u else 0
 
     @property
     def num_constraints(self):
@@ -194,7 +190,7 @@ class CovModel:
         assert self.cov_name in data.covs.columns
         cov = data.covs[self.cov_name].values
 
-        mat = np.array([]).reshape(0, self.num_fixed_vars)
+        mat = np.array([]).reshape(0, self.num_vars)
         if not self.add_spline:
             return mat
 

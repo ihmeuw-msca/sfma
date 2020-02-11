@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from . import utils
 from .me_model import MEModel
+from .ie_model import IEModel
 
 
 class Model:
@@ -54,6 +55,7 @@ class Model:
 
         # create mixed effects models and inefficiency model
         self.me_model = MEModel(self)
+        self.ie_model = IEModel(self)
 
     def fit(self):
         """Fit the model.

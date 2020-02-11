@@ -41,17 +41,17 @@ def test_default_input(cov_name):
 @pytest.mark.parametrize('add_u', [True, False])
 def test_add_u(add_u):
     cov_model = CovModel('intercept', add_u=add_u)
-    assert add_u == cov_model.num_random_vars
+    assert add_u == cov_model.add_u
 
 
 @pytest.mark.parametrize('add_spline', [True, False])
 def test_add_spline(add_spline):
     cov_model = CovModel('cov0', add_spline=add_spline)
     if add_spline:
-        assert cov_model.num_fixed_vars == cov_model.spline_knots.size + \
+        assert cov_model.num_vars== cov_model.spline_knots.size + \
             cov_model.spline_degree - 2
     else:
-        assert cov_model.num_fixed_vars == 1
+        assert cov_model.num_vars == 1
 
 
 @pytest.mark.parametrize('spline_knots', [None, np.linspace(0.1, 0.9, 9)])
@@ -114,9 +114,9 @@ def test_create_spline(data,
                                data.covs[cov_model.cov_name].min()
                            ))
 
-    assert cov_model.num_fixed_vars == 1
+    assert cov_model.num_vars == 1
     cov_model.update_attr(add_spline=True)
-    assert cov_model.num_fixed_vars == spline.num_spline_bases - 1
+    assert cov_model.num_vars == spline.num_spline_bases - 1
 
 
 @pytest.mark.parametrize('add_spline', [True, False])
@@ -153,4 +153,4 @@ def test_constraint_mat(data, add_spline,
          spline_num_constraint_points=spline_num_constraint_points
     )
     mat = cov_model.create_constraint_mat(data)
-    assert mat.shape == (cov_model.num_constraints, cov_model.num_fixed_vars)
+    assert mat.shape == (cov_model.num_constraints, cov_model.num_vars)
