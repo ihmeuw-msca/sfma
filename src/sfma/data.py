@@ -12,8 +12,6 @@ from anml.data.data_specs import DataSpecs
 from anml.parameter.parameter import ParameterSet
 from anml.parameter.variables import Variable
 
-from . import utils
-
 
 class Data:
 
