@@ -33,7 +33,7 @@ class LinearMixedEffectsMarginal(Model):
         self.n_gammas = self._param_set.num_re_var
         self.x_dim = self.n_betas + self.n_gammas
         self.X = self._param_set.design_matrix
-        self.Z = self._param_set.re_matrix
+        self.Z = self._param_set.design_matrix_re
         self.C = self._param_set.constr_matrix_full
         self.lb = self._param_set.constr_lower_bounds_full
         self.ub = self._param_set.constr_upper_bounds_full
@@ -55,7 +55,7 @@ class LinearMixedEffectsMarginal(Model):
 
         V = Sigma**2 + np.dot(self.Z,np.dot(Gamma, self.Z.T))
         r = y - self.X.dot(betas)
-        return 0.5 * np.dot(r, np.linalg.solve(V, r)) + np.linalg.slogdet(V) + self.prior_fun(x)
+        return 0.5 * np.dot(r, np.linalg.solve(V, r)) + np.prod(np.linalg.slogdet(V)) + self.prior_fun(x)
 
     def predict(self, x):
         betas = x[:self.n_betas]
