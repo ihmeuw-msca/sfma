@@ -10,9 +10,10 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint
 
 from anml.models.interface import Model
-from anml.parameter.parameter import ParameterSet
-from anml.parameter.processors import collect_priors
-from anml.parameter.variables import Variable
+from anml.parameter.parameter import ParameterSet, Parameter
+from anml.parameter.prior import GaussianPrior, Prior
+from anml.parameter.processors import process_for_marginal, process_for_maximal
+from anml.parameter.variables import Variable, Intercept
 
 from sfma.data import Data
 
@@ -21,9 +22,12 @@ class LinearMixedEffectsMarginal(Model):
 
     def __init__(self, param_set_processed: ParameterSet = None):
         super().__init__()
-        self.param_set = param_set_processed
+        if param_set_processed is not None:
+            self.param_set = param_set_processed
+        else:
+            self._param_set = None
 
-    @property 
+    @property
     def param_set(self):
         return self._param_set
 
@@ -48,8 +52,8 @@ class LinearMixedEffectsMarginal(Model):
         self.prior_fun = self._param_set.prior_fun 
 
     def objective(self, x, data: Data):
-        if self.param_set is None:
-            raise ValueError('Parameters are not yet defined for this model.')
+        if self._param_set is None:
+            raise ValueError('Parameters are not defined for this model.')
         if len(x) != self.x_dim:
             raise TypeError(f'length of x = {len(x)} is not equal to the number of unknowns = {self.x_dim}.')
         betas = x[:self.n_betas]
@@ -68,20 +72,26 @@ class LinearMixedEffectsMarginal(Model):
         return np.dot(self.X, betas)
 
     
-class RandomEffectsOnly(Model):
+class GaussianRandomEffects(Model):
 
-    def __init__(self, param_set_processed: Variable = None):
+    def __init__(self, param_set_processed: ParameterSet = None):
         super().__init__()
-        self.param_set = param_set_processed
+        if param_set_processed is not None:
+            if not all([isinstance(prior, GaussianPrior) for prior in param_set_processed.re_priors]):
+                raise TypeError('Only Gaussian priors allowed.')
+            self.param_set = param_set_processed
+        else:
+            self._param_set = None
 
     @property
     def param_set(self):
         return self._param_set
 
     @param_set.setter
-    def param_set(self, param_set_processed):
+    def param_set(self, param_set_processed: pd.DataFrame):
         self._param_set = param_set_processed
         self.Z = self._param_set.design_matrix_re
+        self.D = self._param_set.re_var_diag_matrix
         self.lb = self._param_set.lower_bounds_full[self._param_set.num_fe:]
         self.ub = self._param_set.upper_bounds_full[self._param_set.num_fe:]
         self.bounds = Bounds(self.lb, self.ub)
@@ -91,7 +101,12 @@ class RandomEffectsOnly(Model):
             self.c_ub = self._param_set.constr_upper_bounds_full
             self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
         self.x_dim = self._param_set.num_re
-        self.prior_fun = self._param_set.prior_fun
+        self.gammas = [prior.std[0] for prior in param_set_processed.re_priors]
+
+    @property
+    def prior_fun(self):
+        self._prior_fun = lambda x: np.sum(x**2/np.dot(self.D, self.gammas)) / 2
+        return self._prior_fun 
 
     def objective(self, x, data):
         if self.param_set is None:
@@ -106,7 +121,21 @@ class RandomEffectsOnly(Model):
         return np.dot(self.Z, x)
 
 
+class UModel(GaussianRandomEffects):
 
+    def closed_form_soln(self, data: Data):
+        y = data.obs
+        sigma = data.obs_se 
+        return np.linalg.solve(
+            np.dot(self.Z.T, np.dot(np.diag(1/sigma**2), self.Z)) + np.diag(1/np.dot(self.D, self.gammas)), 
+            np.dot(self.Z.T, y / sigma**2),
+        )
 
+    
+class VModel(UModel):
 
+    def closed_form_soln(self, data: Data):
+        soln = super().closed_form_soln(data)
+        return np.max(0, soln)
+        
 

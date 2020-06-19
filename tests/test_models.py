@@ -5,9 +5,9 @@ import pytest
 from anml.parameter.variables import Variable
 from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior
-from anml.solvers.base import ScipyOpt
+from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models import LinearMixedEffectsMarginal, RandomEffectsOnly
+from sfma.models import LinearMixedEffectsMarginal, GaussianRandomEffects, UModel
 
 
 @pytest.fixture
@@ -51,15 +51,15 @@ def test_lme_marginal(lme_inputs):
     model = LinearMixedEffectsMarginal(param_set)
     solver = ScipyOpt(model)
     x_init = np.random.rand(len(beta_true) + len(gamma_true))
-    solver.fit(x_init, data, options=dict(maxiter=100))
+    solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
     np.testing.assert_allclose(solver.x_opt[:len(beta_true)], beta_true, rtol=5e-2)
 
 
 @pytest.fixture
-def reo_inputs():
+def gre_inputs():
     np.random.seed(42)
-    n_groups, n_data_per_group, eta = 5, 50, 0.5
-    Z = np.kron(np.ones((n_data_per_group, 1)), np.identity(n_groups))
+    n_groups, n_data_per_group, eta = 5, 50, 1.0
+    Z = np.kron(np.identity(n_groups), np.ones((n_data_per_group, 1)))
     u_true = np.random.randn(n_groups) * eta 
     S = np.random.rand(n_groups * n_data_per_group)*0.01 + 0.01
     e = np.random.randn(n_groups * n_data_per_group) * S
@@ -74,8 +74,8 @@ def reo_inputs():
 
 
 @patch.object(ParameterSet, '__init__', lambda x: None)
-def test_random_only_model(reo_inputs):
-    data, Z, u_true, eta = reo_inputs
+def test_gaussian_random_effects_model(gre_inputs):
+    data, Z, u_true, eta = gre_inputs
     n_groups = len(u_true)
     param_set = ParameterSet()
     param_set.reset()
@@ -85,11 +85,20 @@ def test_random_only_model(reo_inputs):
         param_set.constr_matrix_full = None
         param_set.lower_bounds_full = [0.0] + [-2.0] * n_groups
         param_set.upper_bounds_full = [0.0] + [2.0] * n_groups
-        param_set.prior_fun = lambda x: np.sum(x[1:]**2 / eta)
+        param_set.re_priors = [GaussianPrior(mean=[0.0], std=[eta])]
+        param_set.re_var_diag_matrix = np.ones((n_groups, 1))
 
-        model = RandomEffectsOnly(param_set)
+        model = GaussianRandomEffects(param_set)
         solver = ScipyOpt(model)
         x_init = np.random.rand(n_groups)
-        solver.fit(x_init, data, options=dict(maxiter=100))
-        assert np.linalg.norm(solver.x_opt - u_true) / np.linalg.norm(u_true) < 5e-2
+        solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
+        assert np.linalg.norm(solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
+
+        u_model = UModel(param_set)
+        cf_solver = ClosedFormSolver(u_model)
+        cf_solver.fit(x_init, data)
+        assert np.linalg.norm(cf_solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
+
+        
+
 
