@@ -7,7 +7,7 @@
 """
 import numpy as np
 import pandas as pd
-from scipy.optimize import LinearConstraint
+from scipy.optimize import Bounds, LinearConstraint
 
 from anml.models.interface import Model
 from anml.parameter.parameter import ParameterSet
@@ -33,13 +33,18 @@ class LinearMixedEffectsMarginal(Model):
         self.n_betas = self._param_set.num_fe
         self.n_gammas = self._param_set.num_re_var
         self.x_dim = self.n_betas + self.n_gammas
+        
         self.X = self._param_set.design_matrix
         self.Z = self._param_set.design_matrix_re
         self.D = self._param_set.re_var_diag_matrix
-        self.C = self._param_set.constr_matrix_full
-        self.lb = self._param_set.constr_lower_bounds_full
-        self.ub = self._param_set.constr_upper_bounds_full
-        self.constraints = LinearConstraint(self.C, self.lb, self.ub)
+        self.lb = self._param_set.lower_bounds_full 
+        self.ub = self._param_set.upper_bounds_full  
+        self.bounds = Bounds(self.lb, self.ub)
+        if self._param_set.constr_matrix_full is not None:      
+            self.C = self._param_set.constr_matrix_full
+            self.c_lb = self._param_set.constr_lower_bounds_full
+            self.c_ub = self._param_set.constr_upper_bounds_full
+            self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
         self.prior_fun = self._param_set.prior_fun 
 
     def objective(self, x, data: Data):
@@ -77,12 +82,15 @@ class RandomEffectsOnly(Model):
     def param_set(self, param_set_processed):
         self._param_set = param_set_processed
         self.Z = self._param_set.design_matrix_re
-        self.C = self._param_set.constr_matrix_full[:, self._param_set.num_fe:]
-        self.lb = self._param_set.constr_lower_bounds_full
-        self.ub = self._param_set.constr_upper_bounds_full
-        self.constraints = LinearConstraint(self.C, self.lb, self.ub)
+        self.lb = self._param_set.lower_bounds_full
+        self.ub = self._param_set.upper_bounds_full
+        self.bounds = Bounds(self.lb, self.ub)
+        if self._param_set.constr_matrix_full is not None:
+            self.C = self._param_set.constr_matrix_full[:, self._param_set.num_fe:]
+            self.c_lb = self._param_set.constr_lower_bounds_full
+            self.c_ub = self._param_set.constr_upper_bounds_full
+            self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
         self.x_dim = self._param_set.num_re
-        # import pdb; pdb.set_trace()
         self.prior_fun = self._param_set.prior_fun
 
     def objective(self, x, data):
