@@ -20,6 +20,7 @@ from sfma.data import Data
 class LinearMixedEffectsMarginal(Model):
 
     def __init__(self, param_set_processed: ParameterSet = None):
+        super().__init__()
         self.param_set = param_set_processed
 
     @property 
@@ -38,8 +39,7 @@ class LinearMixedEffectsMarginal(Model):
         self.C = self._param_set.constr_matrix_full
         self.lb = self._param_set.constr_lower_bounds_full
         self.ub = self._param_set.constr_upper_bounds_full
-        self.constraint = LinearConstraint(self.C, self.lb, self.ub)
-        
+        self.constraints = LinearConstraint(self.C, self.lb, self.ub)
         self.prior_fun = self._param_set.prior_fun 
 
     def objective(self, x, data: Data):
@@ -66,7 +66,8 @@ class LinearMixedEffectsMarginal(Model):
 class RandomEffectsOnly(Model):
 
     def __init__(self, param_set_processed: Variable = None):
-        self._param_set = param_set_processed
+        super().__init__()
+        self.param_set = param_set_processed
 
     @property
     def param_set(self):
@@ -79,9 +80,9 @@ class RandomEffectsOnly(Model):
         self.C = self._param_set.constr_matrix_full[:, self._param_set.num_fe:]
         self.lb = self._param_set.constr_lower_bounds_full
         self.ub = self._param_set.constr_upper_bounds_full
-        self.constraint = LinearConstraint(self.C, self.lb, self.ub)
+        self.constraints = LinearConstraint(self.C, self.lb, self.ub)
         self.x_dim = self._param_set.num_re
-
+        # import pdb; pdb.set_trace()
         self.prior_fun = self._param_set.prior_fun
 
     def objective(self, x, data):

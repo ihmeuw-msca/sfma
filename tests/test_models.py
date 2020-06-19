@@ -4,13 +4,15 @@ import pytest
 
 from anml.parameter.variables import Variable
 from anml.parameter.parameter import ParameterSet
+from anml.parameter.prior import GaussianPrior
 from anml.solvers.base import ScipyOpt
 
-from sfma.models import LinearMixedEffectsMarginal
+from sfma.models import LinearMixedEffectsMarginal, RandomEffectsOnly
 
 
 @pytest.fixture
-def inputs():
+def lme_inputs():
+    np.random.seed(42)
     n_data, n_beta, n_gamma = 50, 3, 2
     beta_true = np.random.randn(n_beta)
     gamma_true = np.random.rand(n_gamma)*0.09 + 0.01
@@ -27,34 +29,67 @@ def inputs():
     mock_data.obs = Y 
     mock_data.obs_se = S
 
+    return mock_data, X, Z, beta_true, gamma_true
+
+@patch.object(ParameterSet, '__init__', lambda x: None)
+def test_lme_marginal(lme_inputs):
+    data, X, Z, beta_true, gamma_true = lme_inputs
+    n_beta, n_gamma = len(beta_true), len(gamma_true)
     # mock parameter set
-    mock_param_set = Mock()
-    mock_param_set.num_fe = n_beta
-    mock_param_set.num_re_var = n_gamma
-    mock_param_set.design_matrix = X
-    mock_param_set.design_matrix_re = Z
-    mock_param_set.constr_matrix_full = np.identity(n_beta + n_gamma)
-    mock_param_set.constr_lower_bounds_full = np.array([-10.0] * (n_beta + n_gamma))
-    mock_param_set.constr_upper_bounds_full = np.array([10.0] * (n_data + n_gamma))
-    mock_param_set.prior_fun = lambda x: 0.0
-    return mock_data, mock_param_set, beta_true, gamma_true
-
-
-def test_lme_marginal(inputs):
-    data, param_set, beta_true, gamma_true = inputs
+    param_set = ParameterSet()
+    param_set.reset()
+    param_set.num_fe = n_beta
+    param_set.num_re_var = n_gamma
+    param_set.design_matrix = X
+    param_set.design_matrix_re = Z
+    param_set.re_var_diag_matrix = np.identity(n_gamma)
+    param_set.constr_matrix_full = np.identity(n_beta + n_gamma)
+    param_set.constr_lower_bounds_full = np.array([-10.0] * (n_beta + n_gamma))
+    param_set.constr_upper_bounds_full = np.array([10.0] * (n_beta + n_gamma))
+    param_set.prior_fun = lambda x: 0.0
+    
     model = LinearMixedEffectsMarginal(param_set)
     solver = ScipyOpt(model)
     x_init = np.random.rand(len(beta_true) + len(gamma_true))
     solver.fit(x_init, data, options=dict(maxiter=100))
-    np.testing.assert_allclose(solver.x_opt[:len(beta_true)], beta_true, rtol=1e-2)
+    np.testing.assert_allclose(solver.x_opt[:len(beta_true)], beta_true, rtol=5e-2)
 
 
+@pytest.fixture
+def reo_inputs():
+    np.random.seed(42)
+    n_groups, n_data_per_group, eta = 5, 50, 0.5
+    Z = np.kron(np.ones((n_data_per_group, 1)), np.identity(n_groups))
+    u_true = np.random.randn(n_groups) * eta 
+    S = np.random.rand(n_groups * n_data_per_group)*0.01 + 0.01
+    e = np.random.randn(n_groups * n_data_per_group) * S
+    y = np.dot(Z, u_true) + e
+
+    # mock data
+    mock_data = Mock()
+    mock_data.obs = y
+    mock_data.obs_se = S
+    
+    return mock_data, Z, u_true, eta 
 
 
+@patch.object(ParameterSet, '__init__', lambda x: None)
+def test_random_only_model(reo_inputs):
+    data, Z, u_true, eta = reo_inputs
+    n_groups = len(u_true)
+    param_set = ParameterSet()
+    param_set.reset()
+    with patch.object(ParameterSet, 'num_re', n_groups):
+        param_set.num_fe = 1
+        param_set.design_matrix_re = Z
+        param_set.constr_matrix_full = np.identity(1 + n_groups)
+        param_set.constr_lower_bounds_full = [0.0] + [-2.0] * n_groups
+        param_set.constr_upper_bounds_full = [0.0] + [2.0] * n_groups
+        param_set.prior_fun = lambda x: np.sum(x[1:]**2 / eta)
 
-
-
-
-
-
+        model = RandomEffectsOnly(param_set)
+        solver = ScipyOpt(model)
+        x_init = np.random.rand(n_groups)
+        solver.fit(x_init, data, options=dict(maxiter=100))
+        assert np.linalg.norm(solver.x_opt - u_true) / np.linalg.norm(u_true) < 5e-2
 
