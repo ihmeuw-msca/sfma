@@ -43,9 +43,9 @@ def test_lme_marginal(lme_inputs):
     param_set.design_matrix = X
     param_set.design_matrix_re = Z
     param_set.re_var_diag_matrix = np.identity(n_gamma)
-    param_set.constr_matrix_full = np.identity(n_beta + n_gamma)
-    param_set.constr_lower_bounds_full = np.array([-10.0] * (n_beta + n_gamma))
-    param_set.constr_upper_bounds_full = np.array([10.0] * (n_beta + n_gamma))
+    param_set.constr_matrix_full = None
+    param_set.lower_bounds_full = np.array([-10.0] * (n_beta + n_gamma))
+    param_set.upper_bounds_full = np.array([10.0] * (n_beta + n_gamma))
     param_set.prior_fun = lambda x: 0.0
     
     model = LinearMixedEffectsMarginal(param_set)
@@ -82,9 +82,9 @@ def test_random_only_model(reo_inputs):
     with patch.object(ParameterSet, 'num_re', n_groups):
         param_set.num_fe = 1
         param_set.design_matrix_re = Z
-        param_set.constr_matrix_full = np.identity(1 + n_groups)
-        param_set.constr_lower_bounds_full = [0.0] + [-2.0] * n_groups
-        param_set.constr_upper_bounds_full = [0.0] + [2.0] * n_groups
+        param_set.constr_matrix_full = None
+        param_set.lower_bounds_full = [0.0] + [-2.0] * n_groups
+        param_set.upper_bounds_full = [0.0] + [2.0] * n_groups
         param_set.prior_fun = lambda x: np.sum(x[1:]**2 / eta)
 
         model = RandomEffectsOnly(param_set)

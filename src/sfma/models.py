@@ -82,8 +82,8 @@ class RandomEffectsOnly(Model):
     def param_set(self, param_set_processed):
         self._param_set = param_set_processed
         self.Z = self._param_set.design_matrix_re
-        self.lb = self._param_set.lower_bounds_full
-        self.ub = self._param_set.upper_bounds_full
+        self.lb = self._param_set.lower_bounds_full[self._param_set.num_fe:]
+        self.ub = self._param_set.upper_bounds_full[self._param_set.num_fe:]
         self.bounds = Bounds(self.lb, self.ub)
         if self._param_set.constr_matrix_full is not None:
             self.C = self._param_set.constr_matrix_full[:, self._param_set.num_fe:]
