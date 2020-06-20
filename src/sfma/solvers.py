@@ -28,7 +28,7 @@ class AlternatingSolver(CompositeSolver):
         self.u_solver.model.param_set = u_param_set
         self.v_solver.model.param_set = v_param_set
 
-    def step(self, betas, gammas, us, vs, eta, data):
+    def step(self, betas, gammas, us, vs, eta, data, use_em=True):
         data.obs = data.input_obs + np.dot(self.v_solver.model.Z, vs)
         beta_gamma = np.hstack((betas, gammas))
         self.lme_solver.fit(beta_gamma, data, options=dict(solver_options=dict(maxiter=100)))
@@ -49,10 +49,13 @@ class AlternatingSolver(CompositeSolver):
         vs = self.v_solver.x_opt
 
         # fitting eta
-        eta = [np.std(vs)]
+        if use_em:
+            eta = [np.dot(vs, vs)]
+        else:
+            eta = [np.std(vs)]
         return betas, gammas, us, vs, eta
 
-    def fit(self, x_init: List[np.ndarray], data: Data, options: Optional[Dict[str, str]] = dict(verbose=True, maxiter=100, tol=1e-5)):
+    def fit(self, x_init: List[np.ndarray], data: Data, options: Optional[Dict[str, str]] = dict(use_em=True, maxiter=100, tol=1e-5)):
         betas, gammas, us, vs, eta = x_init 
         data.input_obs = deepcopy(data.obs)
 
@@ -64,10 +67,14 @@ class AlternatingSolver(CompositeSolver):
                 - self.u_solver.model.predict(us) - self.v_solver.model.predict(vs)
             )**2 / data.obs_se**2)
         
+        use_em = True
+        if 'use_em' in options:
+            use_em = options['use_em']
+        
         self.errors_hist = []
         itr = 0
         while itr < options['maxiter']:
-            betas, gammas, us, vs, eta = self.step(betas, gammas, us, vs, eta, data)
+            betas, gammas, us, vs, eta = self.step(betas, gammas, us, vs, eta, data, use_em)
             self.errors_hist.append(error(betas, us, vs))
             if 'verbose' in options and options['verbose']:
                 print(f'iter {itr} \t error = {self.errors_hist[-1]}')
