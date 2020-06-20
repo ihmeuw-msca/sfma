@@ -44,7 +44,7 @@ def test_alternating_solver(sfa_inputs):
     param_set_beta_gamma.num_re_var = 1
     param_set_beta_gamma.design_matrix = X
     param_set_beta_gamma.design_matrix_re = Z_u
-    param_set_beta_gamma.re_var_diag_matrix = np.ones((len(u_true), 1))
+    param_set_beta_gamma.re_var_padding = np.ones((len(u_true), 1))
     param_set_beta_gamma.constr_matrix_full = None
     param_set_beta_gamma.lower_bounds_full = np.array([-10.0] * n_beta + [0.0])
     param_set_beta_gamma.upper_bounds_full = np.array([10.0] * (n_beta + 1))
@@ -61,7 +61,7 @@ def test_alternating_solver(sfa_inputs):
         param_set_u.lower_bounds_full = [0.0] + [-2.0] * len(u_true)
         param_set_u.upper_bounds_full = [0.0] + [2.0] * len(u_true)
         param_set_u.re_priors = [GaussianPrior(mean=[0.0], std=[gamma_true])]
-        param_set_u.re_var_diag_matrix = np.ones((len(u_true), 1))
+        param_set_u.re_var_padding = np.ones((len(u_true), 1))
 
         # mock parameter set for vs
         param_set_v = ParameterSet()
@@ -73,7 +73,7 @@ def test_alternating_solver(sfa_inputs):
         param_set_v.lower_bounds_full = [0.0] + [-2.0] * len(v_true)
         param_set_v.upper_bounds_full = [0.0] + [2.0] * len(v_true)
         param_set_v.re_priors = [GaussianPrior(mean=[0.0], std=[eta_true], lower_bound=[0.0], upper_bound=[np.inf])]
-        param_set_v.re_var_diag_matrix = np.ones((len(v_true), 1))
+        param_set_v.re_var_padding = np.ones((len(v_true), 1))
 
         data.params = [param_set_beta_gamma, param_set_u, param_set_v]
         alt_solver = AlternatingSolver()
