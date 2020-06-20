@@ -50,7 +50,7 @@ class AlternatingSolver(CompositeSolver):
 
         # fitting eta
         if use_em:
-            eta = [np.dot(vs, vs)]
+            eta = [np.dot(vs, vs) / len(vs)]
         else:
             eta = [np.std(vs)]
         return betas, gammas, us, vs, eta
