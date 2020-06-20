@@ -7,7 +7,7 @@ from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior
 from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models import LinearMixedEffectsMarginal, GaussianRandomEffects, UModel
+from sfma.models import LinearMixedEffectsMarginal, UModel
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_lme_marginal(lme_inputs):
 
 
 @pytest.fixture
-def gre_inputs():
+def re_inputs():
     np.random.seed(42)
     n_groups, n_data_per_group, eta = 5, 50, 1.0
     Z = np.kron(np.identity(n_groups), np.ones((n_data_per_group, 1)))
@@ -74,8 +74,8 @@ def gre_inputs():
 
 
 @patch.object(ParameterSet, '__init__', lambda x: None)
-def test_gaussian_random_effects_model(gre_inputs):
-    data, Z, u_true, eta = gre_inputs
+def test_random_effects_model(re_inputs):
+    data, Z, u_true, eta = re_inputs
     n_groups = len(u_true)
     param_set = ParameterSet()
     param_set.reset()
@@ -89,7 +89,7 @@ def test_gaussian_random_effects_model(gre_inputs):
         param_set.re_priors = [GaussianPrior(mean=[0.0], std=[eta])]
         param_set.re_var_diag_matrix = np.ones((n_groups, 1))
 
-        model = GaussianRandomEffects(param_set)
+        model = UModel(param_set)
         solver = ScipyOpt(model)
         x_init = np.random.rand(n_groups)
         solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
