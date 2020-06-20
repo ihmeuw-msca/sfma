@@ -1,4 +1,4 @@
-from mock import patch, Mock
+from mock import patch, Mock, PropertyMock
 import numpy as np
 import pytest
 
@@ -44,7 +44,7 @@ def test_lme_marginal(lme_inputs):
     param_set.design_matrix_re = Z
     param_set.re_var_diag_matrix = np.identity(n_gamma)
     param_set.constr_matrix_full = None
-    param_set.lower_bounds_full = np.array([-10.0] * (n_beta + n_gamma))
+    param_set.lower_bounds_full = np.array([-10.0] * n_beta + [0.0] * n_gamma)
     param_set.upper_bounds_full = np.array([10.0] * (n_beta + n_gamma))
     param_set.prior_fun = lambda x: 0.0
     
@@ -79,8 +79,9 @@ def test_gaussian_random_effects_model(gre_inputs):
     n_groups = len(u_true)
     param_set = ParameterSet()
     param_set.reset()
-    with patch.object(ParameterSet, 'num_re', n_groups):
+    with patch.object(ParameterSet, 'num_re', new_callable=PropertyMock) as mock_num_re:
         param_set.num_fe = 1
+        mock_num_re.return_value = n_groups
         param_set.design_matrix_re = Z
         param_set.constr_matrix_full = None
         param_set.lower_bounds_full = [0.0] + [-2.0] * n_groups
