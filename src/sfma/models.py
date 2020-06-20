@@ -47,7 +47,7 @@ class LinearMixedEffectsMarginal(Base):
         
         self.X = self._param_set.design_matrix
         self.Z = self._param_set.design_matrix_re
-        self.D = self._param_set.re_var_diag_matrix
+        self.D = self._param_set.re_var_padding
         self.lb = self._param_set.lower_bounds_full 
         self.ub = self._param_set.upper_bounds_full  
         self.bounds = Bounds(self.lb, self.ub)
@@ -116,6 +116,10 @@ class FixedEffectsMaximal(LinearMaximal):
             self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
         self.prior_fun = self._param_set.prior_fun 
 
+    @property
+    def X(self):
+        return self.design_matrix
+
 
 class UModel(LinearMaximal):
 
@@ -129,7 +133,7 @@ class UModel(LinearMaximal):
     def param_set(self, param_set_processed: pd.DataFrame):
         self._param_set = param_set_processed
         self.design_matrix = self._param_set.design_matrix_re
-        self.D = self._param_set.re_var_diag_matrix
+        self.D = self._param_set.re_var_padding
         self.lb = self._param_set.lower_bounds_full[self._param_set.num_fe:]
         self.ub = self._param_set.upper_bounds_full[self._param_set.num_fe:]
         self.bounds = Bounds(self.lb, self.ub)
@@ -142,6 +146,10 @@ class UModel(LinearMaximal):
         self.gammas = [prior.std[0] for prior in param_set_processed.re_priors]
 
     @property
+    def Z(self):
+        return self.design_matrix
+
+    @property
     def prior_fun(self):
         self._prior_fun = lambda x: np.sum(x**2/np.dot(self.D, self.gammas)) / 2
         return self._prior_fun 
@@ -150,8 +158,8 @@ class UModel(LinearMaximal):
         y = data.obs
         sigma = data.obs_se 
         return np.linalg.solve(
-            np.dot(self.design_matrix.T, np.dot(np.diag(1/sigma**2), self.design_matrix)) + np.diag(1/np.dot(self.D, self.gammas)), 
-            np.dot(self.design_matrix.T, y / sigma**2),
+            np.dot(self.Z.T, np.dot(np.diag(1/sigma**2), self.Z)) + np.diag(1/np.dot(self.D, self.gammas)), 
+            np.dot(self.Z.T, y / sigma**2),
         )
     
 

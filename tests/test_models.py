@@ -42,7 +42,7 @@ def test_lme_marginal(lme_inputs):
     param_set.num_re_var = n_gamma
     param_set.design_matrix = X
     param_set.design_matrix_re = Z
-    param_set.re_var_diag_matrix = np.identity(n_gamma)
+    param_set.re_var_padding = np.identity(n_gamma)
     param_set.constr_matrix_full = None
     param_set.lower_bounds_full = np.array([-10.0] * n_beta + [0.0] * n_gamma)
     param_set.upper_bounds_full = np.array([10.0] * (n_beta + n_gamma))
@@ -87,7 +87,7 @@ def test_random_effects_model(re_inputs):
         param_set.lower_bounds_full = [0.0] + [-2.0] * n_groups
         param_set.upper_bounds_full = [0.0] + [2.0] * n_groups
         param_set.re_priors = [GaussianPrior(mean=[0.0], std=[eta])]
-        param_set.re_var_diag_matrix = np.ones((n_groups, 1))
+        param_set.re_var_padding = np.ones((n_groups, 1))
 
         model = UModel(param_set)
         solver = ScipyOpt(model)
