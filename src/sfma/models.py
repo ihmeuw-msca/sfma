@@ -18,7 +18,7 @@ from anml.parameter.variables import Variable, Intercept
 from sfma.data import Data
 
 
-class LinearMixedEffectsMarginal(Model):
+class Base(Model):
 
     def __init__(self, param_set_processed: ParameterSet = None):
         super().__init__()
@@ -32,6 +32,13 @@ class LinearMixedEffectsMarginal(Model):
         return self._param_set
 
     @param_set.setter
+    def param_set(self, df: pd.DataFrame):
+        raise NotImplementedError()
+
+
+class LinearMixedEffectsMarginal(Base):
+
+    @Base.param_set.setter
     def param_set(self, param_set_processed: ParameterSet):
         self._param_set = param_set_processed
         self.n_betas = self._param_set.num_fe
@@ -72,22 +79,15 @@ class LinearMixedEffectsMarginal(Model):
         return np.dot(self.X, betas)
 
     
-class GaussianRandomEffects(Model):
+class GaussianRandomEffects(Base):
 
     def __init__(self, param_set_processed: ParameterSet = None):
-        super().__init__()
+        super().__init__(param_set_processed)
         if param_set_processed is not None:
             if not all([isinstance(prior, GaussianPrior) for prior in param_set_processed.re_priors]):
                 raise TypeError('Only Gaussian priors allowed.')
-            self.param_set = param_set_processed
-        else:
-            self._param_set = None
 
-    @property
-    def param_set(self):
-        return self._param_set
-
-    @param_set.setter
+    @Base.param_set.setter
     def param_set(self, param_set_processed: pd.DataFrame):
         self._param_set = param_set_processed
         self.Z = self._param_set.design_matrix_re
