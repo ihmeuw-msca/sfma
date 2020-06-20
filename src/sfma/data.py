@@ -15,7 +15,7 @@ from anml.parameter.variables import Variable
 
 class Data:
 
-    def __init__(self, data_specs: DataSpecs, params: List[Union[Variable, ParameterSet]]):
+    def __init__(self, data_specs: DataSpecs, params: List[ParameterSet]):
         self.data_specs = data_specs
         self.params = params
     
