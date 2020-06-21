@@ -31,25 +31,25 @@ class AlternatingSolver(CompositeSolver):
         self.v_solver.model.param_set = v_param_set
 
     def step(self, betas, gammas, us, vs, eta, data):
-        # data.y = data.obs + np.dot(self.v_solver.model.Z, vs)
         data.y = data.obs + self.v_solver.model.forward(vs)
         beta_gamma = np.hstack((betas, gammas))
         self.lme_solver.fit(beta_gamma, data, options=dict(solver_options=dict(maxiter=100)))
         beta_gamma = self.lme_solver.x_opt
         betas = beta_gamma[:len(betas)]
         gammas = beta_gamma[len(betas):]
+        
         # fitting us
         self.u_solver.gammas = gammas
-        #data.y -= np.dot(self.lme_solver.model.X, betas)
         data.y -= self.lme_solver.model.forward(beta_gamma)
         self.u_solver.fit(us, data)
         us = self.u_solver.x_opt
+        
         # fitting vs
         self.v_solver.gammas = [eta] 
-        #data.y = np.dot(self.lme_solver.model.X, betas) + np.dot(self.u_solver.model.Z, us) - data.obs 
         data.y = self.lme_solver.model.forward(beta_gamma) + self.u_solver.model.forward(us) - data.obs
         self.v_solver.fit(vs, data)
         vs = self.v_solver.x_opt
+        
         # fitting eta
         eta = [np.std(vs) ** 2]
         return betas, gammas, us, vs, eta
