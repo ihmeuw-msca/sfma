@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-   me_model
-   ~~~~~~~~
-
-   Mixed-Effects model module.
-"""
 import numpy as np
 import pandas as pd
+from scipy.linalg import block_diag
 from scipy.optimize import Bounds, LinearConstraint
+from typing import List, Tuple
 
 from anml.models.interface import Model
 from anml.parameter.parameter import ParameterSet, Parameter
 from anml.parameter.prior import GaussianPrior, Prior
-from anml.parameter.processors import process_for_marginal, process_for_maximal
 from anml.parameter.variables import Variable, Intercept
+from anml.parameter.utils import combine_constraints, collect_priors
 
 from sfma.data import Data
 
@@ -27,20 +23,31 @@ class Base(Model):
         else:
             self._param_set = None
 
+    def _prerun_check(self, x):
+        if self._param_set is None:
+            raise ValueError('Parameters are not defined for this model.')
+        if len(x) != self.x_dim:
+            raise TypeError(f'length of x = {len(x)} is not equal to the number of unknowns = {self.x_dim}.')
+
+    def init_model(self):
+        raise NotImplementedError()
+
     @property
     def param_set(self):
         return self._param_set
 
     @param_set.setter
-    def param_set(self, df: pd.DataFrame):
-        raise NotImplementedError()
+    def param_set(self, param_set_processed: pd.DataFrame):
+        self._param_set = param_set_processed
+        self.init_model()
 
 
 class LinearMixedEffectsMarginal(Base):
 
-    @Base.param_set.setter
-    def param_set(self, param_set_processed: ParameterSet):
-        self._param_set = param_set_processed
+    def __init__(self, param_set_processed: ParameterSet = None):
+        super().__init__(param_set_processed)
+
+    def init_model(self):
         self.n_betas = self._param_set.num_fe
         self.n_gammas = self._param_set.num_re_var
         self.x_dim = self.n_betas + self.n_gammas
@@ -48,21 +55,19 @@ class LinearMixedEffectsMarginal(Base):
         self.X = self._param_set.design_matrix
         self.Z = self._param_set.design_matrix_re
         self.D = self._param_set.re_var_padding
-        self.lb = self._param_set.lower_bounds_full 
-        self.ub = self._param_set.upper_bounds_full  
+        
+        self.lb = np.hstack((self._param_set.lb_fe, self._param_set.lb_re_var))
+        self.ub = np.hstack((self._param_set.ub_fe, self._param_set.ub_re_var)) 
         self.bounds = Bounds(self.lb, self.ub)
-        if self._param_set.constr_matrix_full is not None:      
-            self.C = self._param_set.constr_matrix_full
-            self.c_lb = self._param_set.constr_lower_bounds_full
-            self.c_ub = self._param_set.constr_upper_bounds_full
-            self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
-        self.prior_fun = self._param_set.prior_fun 
+        
+        self.constraints = build_linear_constraint([
+            (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe),
+            (self._param_set.constr_matrix_re_var, self._param_set.constr_lb_re_var, self._param_set.constr_ub_re_var),
+        ])
+        self.prior_fun = collect_priors(self._param_set.fe_priors + self._param_set.re_var_priors) 
 
     def objective(self, x, data: Data):
-        if self._param_set is None:
-            raise ValueError('Parameters are not defined for this model.')
-        if len(x) != self.x_dim:
-            raise TypeError(f'length of x = {len(x)} is not equal to the number of unknowns = {self.x_dim}.')
+        self._prerun_check(x)
         betas = x[:self.n_betas]
         gammas = x[self.n_betas:]
 
@@ -82,12 +87,10 @@ class LinearMaximal(Base):
 
     def __init__(self, param_set_processed: ParameterSet = None):
         super().__init__(param_set_processed)
+        self.design_matrix = None
     
     def objective(self, x, data: Data):
-        if self.param_set is None:
-            raise ValueError('Parameter set is not yet defined for this model.')
-        if len(x) != self.param_set.num_re:
-            raise TypeError(f'The length of x = {len(x)} is not equal to the number of variables {self.x_dim}.')
+        self._prerun_check(x)
         sigma = data.obs_se
         return np.sum((data.y - np.dot(self.design_matrix, x))**2 / (2*sigma**2)) + self.prior_fun(x)
 
@@ -97,22 +100,17 @@ class LinearMaximal(Base):
 
 class FixedEffectsMaximal(LinearMaximal):
 
-    @LinearMaximal.param_set.setter 
-    def param_set(self, param_set_processed):
-        self._param_set = param_set_processed
-        self.n_betas = self._param_set.num_fe
-        self.x_dim = self.n_betas
+    def init_model(self):
+        self.x_dim = self._param_set.num_fe
         
-        self.design_matrix = self._param_set.design_matrix
-        self.lb = self._param_set.lower_bounds_full 
-        self.ub = self._param_set.upper_bounds_full  
+        self.design_matrix = self._param_set.design_matrix_fe
+        self.lb = self._param_set.lb_fe
+        self.ub = self._param_set.ub_fe
         self.bounds = Bounds(self.lb, self.ub)
-        if self._param_set.constr_matrix_full is not None:      
-            self.C = self._param_set.constr_matrix_full
-            self.c_lb = self._param_set.constr_lower_bounds_full
-            self.c_ub = self._param_set.constr_upper_bounds_full
-            self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
-        self.prior_fun = self._param_set.prior_fun 
+        self.constraints = build_linear_constraint([
+            (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe)
+        ])
+        self.prior_fun = collect_priors(self._param_set.fe_priors)
 
     @property
     def X(self):
@@ -127,21 +125,17 @@ class UModel(LinearMaximal):
             if not all([isinstance(prior, GaussianPrior) for prior in param_set_processed.re_priors]):
                 raise TypeError('Only Gaussian priors allowed.')
 
-    @LinearMaximal.param_set.setter
-    def param_set(self, param_set_processed: pd.DataFrame):
-        self._param_set = param_set_processed
+    def init_model(self):
+        self.x_dim = self._param_set.num_re
         self.design_matrix = self._param_set.design_matrix_re
         self.D = self._param_set.re_var_padding
-        self.lb = self._param_set.lower_bounds_full[self._param_set.num_fe:]
-        self.ub = self._param_set.upper_bounds_full[self._param_set.num_fe:]
+        self.lb = self._param_set.lb_re
+        self.ub = self._param_set.ub_re
         self.bounds = Bounds(self.lb, self.ub)
-        if self._param_set.constr_matrix_full is not None:
-            self.C = self._param_set.constr_matrix_full[:, self._param_set.num_fe:]
-            self.c_lb = self._param_set.constr_lower_bounds_full
-            self.c_ub = self._param_set.constr_upper_bounds_full
-            self.constraints = LinearConstraint(self.C, self.c_lb, self.c_ub)
-        self.x_dim = self._param_set.num_re
-        self.gammas = [prior.std[0] for prior in param_set_processed.re_priors]
+        self.constraints = build_linear_constraint([
+            (self._param_set.constr_matrix_re, self._param_set.constr_lb_re, self._param_set.constr_ub_re)
+        ])
+        self.gammas = [prior.std[0] for prior in self._param_set.re_priors]
 
     @property
     def Z(self):
@@ -167,3 +161,12 @@ class VModel(UModel):
         return np.maximum(0, soln)
         
 
+def build_linear_constraint(constraints: List[Tuple[np.ndarray, np.ndarray, np.ndarray]]):
+    if len(constraints) == 1:
+        mats, lbs, ubs = constraints[0]
+    mats, lbs, ubs = zip(*constraints)
+    A, lb, ub = combine_constraints(mats, lbs, ubs)
+    if np.count_nonzero(A) == 0:
+        return None 
+    else:
+        return LinearConstraint(A, lb, ub)
