@@ -32,28 +32,38 @@ def lme_inputs():
 
     return mock_data, X, Z, beta_true, gamma_true
 
-@patch.object(ParameterSet, '__init__', lambda x: None)
+
 def test_lme_marginal(lme_inputs):
     data, X, Z, beta_true, gamma_true = lme_inputs
     n_beta, n_gamma = len(beta_true), len(gamma_true)
     # mock parameter set
-    param_set = ParameterSet()
-    param_set.reset()
-    param_set.num_fe = n_beta
-    param_set.num_re_var = n_gamma
-    param_set.design_matrix = X
-    param_set.design_matrix_re = Z
-    param_set.re_var_padding = np.identity(n_gamma)
-    param_set.constr_matrix_full = None
-    param_set.lower_bounds_full = np.array([-10.0] * n_beta + [0.0] * n_gamma)
-    param_set.upper_bounds_full = np.array([10.0] * (n_beta + n_gamma))
-    param_set.prior_fun = lambda x: 0.0
-    
-    model = LinearMixedEffectsMarginal(param_set)
-    solver = ScipyOpt(model)
-    x_init = np.random.rand(len(beta_true) + len(gamma_true))
-    solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
-    np.testing.assert_allclose(solver.x_opt[:len(beta_true)], beta_true, rtol=5e-2)
+    with patch.object(ParameterSet, '__init__', lambda x: None):
+        param_set = ParameterSet()
+        param_set.reset()
+        param_set.num_fe = n_beta
+        param_set.num_re_var = n_gamma
+        param_set.design_matrix_fe = X
+        param_set.design_matrix_re = Z
+        param_set.re_var_padding = np.identity(n_gamma)
+        param_set.constr_matrix_full = None
+        param_set.lb_fe = [-10.0] * n_beta
+        param_set.ub_fe = [10.0] * n_beta
+        param_set.lb_re_var = [0.0] * n_gamma
+        param_set.ub_re_var = [10.0] * n_gamma
+        param_set.constr_matrix_fe = np.zeros((1, n_beta))
+        param_set.constr_lb_fe = [0.0]
+        param_set.constr_ub_fe = [0.0]
+        param_set.constr_matrix_re_var = np.zeros((1, n_gamma))
+        param_set.constr_lb_re_var = [0.0]
+        param_set.constr_ub_re_var = [0.0]
+        param_set.fe_priors = []
+        param_set.re_var_priors = []
+        
+        model = LinearMixedEffectsMarginal(param_set)
+        solver = ScipyOpt(model)
+        x_init = np.random.rand(len(beta_true) + len(gamma_true))
+        solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
+        np.testing.assert_allclose(solver.x_opt[:len(beta_true)], beta_true, rtol=5e-2)
 
 
 @pytest.fixture
@@ -75,32 +85,34 @@ def re_inputs():
     return mock_data, Z, u_true, eta 
 
 
-@patch.object(ParameterSet, '__init__', lambda x: None)
 def test_random_effects_model(re_inputs):
     data, Z, u_true, eta = re_inputs
     n_groups = len(u_true)
-    param_set = ParameterSet()
-    param_set.reset()
-    with patch.object(ParameterSet, 'num_re', new_callable=PropertyMock) as mock_num_re:
-        param_set.num_fe = 1
-        mock_num_re.return_value = n_groups
-        param_set.design_matrix_re = Z
-        param_set.constr_matrix_full = None
-        param_set.lower_bounds_full = [0.0] + [-2.0] * n_groups
-        param_set.upper_bounds_full = [0.0] + [2.0] * n_groups
-        param_set.re_priors = [GaussianPrior(mean=[0.0], std=[eta])]
-        param_set.re_var_padding = np.ones((n_groups, 1))
+    with patch.object(ParameterSet, '__init__', lambda x: None):
+        with patch.object(ParameterSet, 'num_re', new_callable=PropertyMock) as mock_num_re:
+            param_set = ParameterSet()
+            param_set.reset()
+            param_set.num_fe = 1
+            mock_num_re.return_value = n_groups
+            param_set.design_matrix_re = Z
+            param_set.constr_matrix_re = np.zeros((1, n_groups))
+            param_set.constr_lb_re = [0.0]
+            param_set.constr_ub_re = [0.0]
+            param_set.lb_re = [-2.0] * n_groups
+            param_set.ub_re = [2.0] * n_groups
+            param_set.re_priors = [GaussianPrior(mean=[0.0], std=[eta])]
+            param_set.re_var_padding = np.ones((n_groups, 1))
 
-        model = UModel(param_set)
-        solver = ScipyOpt(model)
-        x_init = np.random.rand(n_groups)
-        solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
-        assert np.linalg.norm(solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
+            model = UModel(param_set)
+            solver = ScipyOpt(model)
+            x_init = np.random.rand(n_groups)
+            solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
+            assert np.linalg.norm(solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
 
-        u_model = UModel(param_set)
-        cf_solver = ClosedFormSolver(u_model)
-        cf_solver.fit(x_init, data)
-        assert np.linalg.norm(cf_solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
+            u_model = UModel(param_set)
+            cf_solver = ClosedFormSolver(u_model)
+            cf_solver.fit(x_init, data)
+            assert np.linalg.norm(cf_solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
 
         
 

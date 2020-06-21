@@ -52,7 +52,7 @@ class LinearMixedEffectsMarginal(Base):
         self.n_gammas = self._param_set.num_re_var
         self.x_dim = self.n_betas + self.n_gammas
         
-        self.X = self._param_set.design_matrix
+        self.X = self._param_set.design_matrix_fe
         self.Z = self._param_set.design_matrix_re
         self.D = self._param_set.re_var_padding
         
@@ -87,7 +87,6 @@ class LinearMaximal(Base):
 
     def __init__(self, param_set_processed: ParameterSet = None):
         super().__init__(param_set_processed)
-        self.design_matrix = None
     
     def objective(self, x, data: Data):
         self._prerun_check(x)
