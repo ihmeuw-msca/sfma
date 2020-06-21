@@ -68,11 +68,10 @@ class LinearMixedEffectsMarginal(Base):
 
         Sigma = np.diag(data.obs_se)
         Gamma = np.diag(np.dot(self.D, gammas))
-        y = data.obs 
 
         V = Sigma**2 + np.dot(self.Z,np.dot(Gamma, self.Z.T))
-        r = y - self.X.dot(betas)
-        return 0.5 * np.dot(r, np.linalg.solve(V, r)) + np.prod(np.linalg.slogdet(V)) + self.prior_fun(x)
+        r = data.y - self.X.dot(betas)
+        return 0.5 * np.dot(r, np.linalg.solve(V, r)) + np.prod(np.linalg.slogdet(V)) * 0.5 + self.prior_fun(x)
 
     def predict(self, x):
         betas = x[:self.n_betas]
@@ -89,9 +88,8 @@ class LinearMaximal(Base):
             raise ValueError('Parameter set is not yet defined for this model.')
         if len(x) != self.param_set.num_re:
             raise TypeError(f'The length of x = {len(x)} is not equal to the number of variables {self.x_dim}.')
-        y = data.obs
         sigma = data.obs_se
-        return np.sum((y - np.dot(self.design_matrix, x))**2 / (2*sigma**2)) + self.prior_fun(x)
+        return np.sum((data.y - np.dot(self.design_matrix, x))**2 / (2*sigma**2)) + self.prior_fun(x)
 
     def predict(self, x, **kwargs):
         return np.dot(self.design_matrix, x)
@@ -155,11 +153,10 @@ class UModel(LinearMaximal):
         return self._prior_fun 
 
     def closed_form_soln(self, data: Data):
-        y = data.obs
         sigma = data.obs_se 
         return np.linalg.solve(
             np.dot(self.Z.T, np.dot(np.diag(1/sigma**2), self.Z)) + np.diag(1/np.dot(self.D, self.gammas)), 
-            np.dot(self.Z.T, y / sigma**2),
+            np.dot(self.Z.T, data.y / sigma**2),
         )
     
 

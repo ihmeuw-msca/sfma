@@ -28,55 +28,39 @@ class AlternatingSolver(CompositeSolver):
         self.u_solver.model.param_set = u_param_set
         self.v_solver.model.param_set = v_param_set
 
-    def step(self, betas, gammas, us, vs, eta, data, use_em=True):
-        data.obs = data.input_obs + np.dot(self.v_solver.model.Z, vs)
+    def step(self, betas, gammas, us, vs, eta, data):
+        data.y = data.obs + np.dot(self.v_solver.model.Z, vs)
         beta_gamma = np.hstack((betas, gammas))
         self.lme_solver.fit(beta_gamma, data, options=dict(solver_options=dict(maxiter=100)))
         beta_gamma = self.lme_solver.x_opt
         betas = beta_gamma[:len(betas)]
         gammas = beta_gamma[len(betas):]
-        
         # fitting us
         self.u_solver.gammas = gammas
-        data.obs -= np.dot(self.lme_solver.model.X, betas)
+        data.y -= np.dot(self.lme_solver.model.X, betas)
         self.u_solver.fit(us, data)
         us = self.u_solver.x_opt
-
         # fitting vs
         self.v_solver.gammas = [eta] 
-        data.obs = np.dot(self.lme_solver.model.X, betas) + np.dot(self.u_solver.model.Z, us) - data.input_obs 
+        data.y = np.dot(self.lme_solver.model.X, betas) + np.dot(self.u_solver.model.Z, us) - data.obs 
         self.v_solver.fit(vs, data)
         vs = self.v_solver.x_opt
-
         # fitting eta
-        if use_em:
-            eta = [np.dot(vs, vs) / len(vs)]
-        else:
-            eta = [np.std(vs)]
+        eta = [np.std(vs) ** 2]
         return betas, gammas, us, vs, eta
 
-    def fit(self, x_init: List[np.ndarray], data: Data, options: Optional[Dict[str, str]] = dict(use_em=True, maxiter=100, tol=1e-5)):
+    def fit(self, x_init: List[np.ndarray], data: Data, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
         betas, gammas, us, vs, eta = x_init 
-        data.input_obs = deepcopy(data.obs)
-
+        data.y = deepcopy(data.obs)
         self.set_params(data)
-
-        def error(betas, us, vs):
-            return np.mean((
-                data.input_obs - self.lme_solver.model.predict(betas) 
-                - self.u_solver.model.predict(us) - self.v_solver.model.predict(vs)
-            )**2 / data.obs_se**2)
-        
-        use_em = True
-        if 'use_em' in options:
-            use_em = options['use_em']
         
         self.errors_hist = []
         itr = 0
         while itr < options['maxiter']:
-            betas, gammas, us, vs, eta = self.step(betas, gammas, us, vs, eta, data, use_em)
-            self.errors_hist.append(error(betas, us, vs))
+            betas, gammas, us, vs, eta = self.step(betas, gammas, us, vs, eta, data)
+            self.errors_hist.append(self.error([betas, gammas, us, vs, eta], data))
             if 'verbose' in options and options['verbose']:
+                print('-------------')
                 print(f'iter {itr} \t error = {self.errors_hist[-1]}')
                 print(f'betas = {betas}')
                 print(f'gammas = {gammas}')
@@ -91,8 +75,16 @@ class AlternatingSolver(CompositeSolver):
         self.v_final = vs 
         self.eta_final = eta 
 
-        self.x_opt = np.hstack((self.beta_final, self.gamma_final, self.u_final, self.v_final, self.eta_final))
-        self.fun_val_opt = error(self.beta_final, self.u_final, self.v_final)
+        self.x_opt = [self.beta_final, self.gamma_final, self.u_final, self.v_final, self.eta_final]
+        self.fun_val_opt = self.error(self.x_opt, data)
+
+    def predict(self, x):
+        betas, _, us, vs, _ = x
+        return self.lme_solver.model.predict(betas) + self.u_solver.model.predict(us) - self.v_solver.model.predict(vs)
+
+    def error(self, x, data: Data):
+        return np.mean((data.obs - self.predict(x))**2 / data.obs_se**2)
+
 
 
 
