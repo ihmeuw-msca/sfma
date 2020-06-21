@@ -27,7 +27,7 @@ def sfa_inputs():
     # mock data 
     mock_data = Mock()
     mock_data.obs = y 
-    mock_data.input_obs = y
+    mock_data.y = y
     mock_data.obs_se = sigma
 
     return mock_data, X, Z_u, Z_v, beta_true, gamma_true, eta_true, u_true, v_true
@@ -100,7 +100,7 @@ def test_alternating_solver(sfa_inputs):
 
         # test fit
         eta_init = [np.random.rand()]
-        alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, options=dict(maxiter=5))
+        alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, options=dict(maxiter=2))
 
     
 
