@@ -113,8 +113,7 @@ class BetaModel(LinearMaximal):
         self.constraints = build_linear_constraint([
             (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe)
         ])
-        # self.prior_fun = collect_priors(self._param_set.fe_priors)
-        self.prior_fun = lambda x: 0.0
+        self.prior_fun = collect_priors(self._param_set.fe_priors)
 
     @property
     def design_matrix(self):
