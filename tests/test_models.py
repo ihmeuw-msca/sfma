@@ -45,7 +45,6 @@ def test_lme_marginal(lme_inputs):
         param_set.design_matrix_fe = X
         param_set.design_matrix_re = Z
         param_set.re_var_padding = np.identity(n_gamma)
-        param_set.constr_matrix_full = None
         param_set.lb_fe = [-10.0] * n_beta
         param_set.ub_fe = [10.0] * n_beta
         param_set.lb_re_var = [0.0] * n_gamma
