@@ -2,10 +2,10 @@ from mock import Mock, patch, PropertyMock
 import numpy as np
 import pytest
 
-from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior, Prior
+from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models import LinearMixedEffectsMarginal, UModel, VModel
+from sfma.models import LinearMixedEffectsMarginal, UModel, VModel, Base
 from sfma.solvers import AlternatingSolver
 
 
@@ -32,79 +32,50 @@ def sfa_inputs():
 
     return mock_data, X, Z_u, Z_v, beta_true, gamma_true, eta_true, u_true, v_true
 
-
-@patch.object(ParameterSet, '__init__', lambda x: None)
+@patch.object(Base, '_prerun_check', lambda x, y: None)
+@patch.object(AlternatingSolver, 'set_params', lambda x, y: None)
+@patch.object(UModel, 'init_model', lambda: None)
+@patch.object(LinearMixedEffectsMarginal, 'init_model', lambda: None)
 def test_alternating_solver(sfa_inputs):
     data, X, Z_u, Z_v, beta_true, gamma_true, eta_true, u_true, v_true = sfa_inputs
-    # mock parameter set for beta and gammas
-    n_beta = len(beta_true)
-    param_set_beta_gamma = ParameterSet()
-    param_set_beta_gamma.reset()
-    param_set_beta_gamma.num_fe = n_beta
-    param_set_beta_gamma.num_re_var = 1
-    param_set_beta_gamma.design_matrix = X
-    param_set_beta_gamma.design_matrix_re = Z_u
-    param_set_beta_gamma.re_var_padding = np.ones((len(u_true), 1))
-    param_set_beta_gamma.constr_matrix_full = None
-    param_set_beta_gamma.lower_bounds_full = np.array([-10.0] * n_beta + [0.0])
-    param_set_beta_gamma.upper_bounds_full = np.array([10.0] * (n_beta + 1))
-    param_set_beta_gamma.prior_fun = lambda x: 0.0
-
-    # mock parameter set for us
-    param_set_u = ParameterSet()
-    param_set_u.reset()
-    with patch.object(ParameterSet, 'num_re', lambda x: x):
-        param_set_u.num_fe = 1
-        param_set_u.num_re = len(u_true)
-        param_set_u.design_matrix_re = Z_u
-        param_set_u.constr_matrix_full = None
-        param_set_u.lower_bounds_full = [0.0] + [-2.0] * len(u_true)
-        param_set_u.upper_bounds_full = [0.0] + [2.0] * len(u_true)
-        param_set_u.re_priors = [GaussianPrior(mean=[0.0], std=[gamma_true])]
-        param_set_u.re_var_padding = np.ones((len(u_true), 1))
-
-        # mock parameter set for vs
-        param_set_v = ParameterSet()
-        param_set_v.reset()
-        param_set_v.num_fe = 1
-        param_set_v.num_re = len(v_true)
-        param_set_v.design_matrix_re = Z_v
-        param_set_v.constr_matrix_full = None
-        param_set_v.lower_bounds_full = [0.0] + [-2.0] * len(v_true)
-        param_set_v.upper_bounds_full = [0.0] + [2.0] * len(v_true)
-        param_set_v.re_priors = [GaussianPrior(mean=[0.0], std=[eta_true], lower_bound=[0.0], upper_bound=[np.inf])]
-        param_set_v.re_var_padding = np.ones((len(v_true), 1))
-
-        data.params = [param_set_beta_gamma, param_set_u, param_set_v]
-        alt_solver = AlternatingSolver()
-
-        alt_solver.set_params(data)
-        # at true us, vs, eta
-        beta_init = np.zeros(len(beta_true))
-        gamma_init = [np.random.rand()]
-
-        betas, _, us, vs, _ = alt_solver.step(beta_init, gamma_init, u_true, v_true, eta_true, data)
-        assert np.linalg.norm(betas - beta_true)/ np.linalg.norm(beta_true) < 2e-2
-        assert np.linalg.norm(us - u_true)/ np.linalg.norm(u_true) < 2e-2
-        assert np.linalg.norm(vs - v_true)/ np.linalg.norm(v_true) < 2e-2
-
-        # at true beta, gamma, vs
-        u_init = np.zeros(len(u_true))
-        _, _, us, _, _ = alt_solver.step(beta_true, gamma_true, u_init, v_true, eta_true, data)
-        assert np.linalg.norm(us - u_true)/ np.linalg.norm(u_true) < 2e-2
-
-        # at true beta, gamma, us
-        v_init = np.zeros(len(v_true)) + 0.1
-        _, _, _, vs, _ = alt_solver.step(beta_true, gamma_true, u_true, v_init, eta_true, data)
-        assert np.linalg.norm(vs - v_true)/ np.linalg.norm(v_true) < 5e-2
-
-        # test fit
-        eta_init = [np.random.rand()]
-        alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, options=dict(maxiter=2))
-
+    n_beta, n_gamma, n_u, n_v = len(beta_true), 1, len(u_true), len(v_true)
     
+    lme_model = LinearMixedEffectsMarginal()
+    lme_model.x_dim = n_beta + n_gamma
+    lme_model.n_betas = n_beta
+    lme_model.X = X
+    lme_model.Z = Z_u
+    lme_model.D = np.ones((n_u, 1))
+    lme_model.prior_fun = lambda x: 0.0
 
+    u_model = UModel()
+    u_model.x_dim = n_u
+    u_model.Z = Z_u 
+    u_model.D = np.ones((n_u, 1))
+    u_model.gammas = [gamma_true]
 
+    v_model = VModel()
+    v_model.x_dim = n_v 
+    v_model.Z = Z_v 
+    v_model.D = np.ones((n_v, 1))
+    v_model.gammas = [eta_true]
 
+    alt_solver = AlternatingSolver(solvers_list=[ScipyOpt(lme_model), ClosedFormSolver(u_model), ClosedFormSolver(v_model)])
 
+    beta_init = np.zeros(len(beta_true))
+    gamma_init = [np.random.rand()]
+    u_init = np.zeros(len(u_true))
+    v_init = np.zeros(len(v_true)) + 0.1
+    eta_init = [np.random.rand()]
 
+    betas, _, _, _, _ = alt_solver.step(beta_init, gamma_init, u_true, v_true, eta_true, data)
+    assert np.linalg.norm(betas - beta_true)/ np.linalg.norm(beta_true) < 2e-2
+
+    _, _, us, _, _ = alt_solver.step(beta_true, gamma_true, u_init, v_true, eta_true, data)
+    assert np.linalg.norm(us - u_true)/ np.linalg.norm(u_true) < 2e-2
+
+    _, _, _, vs, _ = alt_solver.step(beta_true, gamma_true, u_true, v_init, eta_true, data)
+    assert np.linalg.norm(vs - v_true)/ np.linalg.norm(v_true) < 5e-2
+
+    # test fit
+    alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, options=dict(maxiter=2))
