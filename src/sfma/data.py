@@ -23,4 +23,5 @@ class Data:
         self.data_specs._validate_df(df)
         self.obs = df[self.data_specs.col_obs].to_numpy()
         self.obs_se = df[self.data_specs.col_obs_se].to_numpy()
+        self.y = df[self.data_specs.col_obs].to_numpy()
 
