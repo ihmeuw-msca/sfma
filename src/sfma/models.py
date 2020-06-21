@@ -138,7 +138,7 @@ class UModel(LinearMaximal):
         self.constraints = build_linear_constraint([
             (self._param_set.constr_matrix_re, self._param_set.constr_lb_re, self._param_set.constr_ub_re)
         ])
-        self.gammas = [prior.std[0] for prior in self._param_set.re_priors]
+        self.gammas_padded = np.array([prior.std[0] for prior in self._param_set.re_priors])
 
     @property
     def design_matrix(self):
@@ -146,13 +146,13 @@ class UModel(LinearMaximal):
 
     @property
     def prior_fun(self):
-        self._prior_fun = lambda x: np.sum(x**2/np.dot(self.D, self.gammas)) / 2
+        self._prior_fun = lambda x: np.sum(x**2/self.gammas_padded) / 2
         return self._prior_fun 
 
     def closed_form_soln(self, data: Data):
         sigma = data.obs_se 
         return np.linalg.solve(
-            np.dot(self.Z.T, np.dot(np.diag(1/sigma**2), self.Z)) + np.diag(1/np.dot(self.D, self.gammas)), 
+            np.dot(self.Z.T, np.dot(np.diag(1/sigma**2), self.Z)) + np.diag(1.0/self.gammas_padded), 
             np.dot(self.Z.T, data.y / sigma**2),
         )
     
