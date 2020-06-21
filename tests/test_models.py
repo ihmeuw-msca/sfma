@@ -18,16 +18,17 @@ def lme_inputs():
     gamma_true = np.random.rand(n_gamma)*0.09 + 0.01
     X = np.random.randn(n_data, n_beta)
     Z = np.random.randn(n_data, n_gamma)
-    S = np.random.rand(n_data)*0.09 + 0.01
-    V = S**2
+    s = np.random.rand(n_data)*0.09 + 0.01
+    V = s**2
     D = np.diag(V) + (Z*gamma_true).dot(Z.T)
-    U = np.random.multivariate_normal(np.zeros(n_data), D)
-    Y = X.dot(beta_true) + U 
+    u = np.random.multivariate_normal(np.zeros(n_data), D)
+    y = X.dot(beta_true) + u
 
     # mock data 
     mock_data = Mock()
-    mock_data.obs = Y 
-    mock_data.obs_se = S
+    mock_data.obs = y 
+    mock_data.y = y 
+    mock_data.obs_se = s
 
     return mock_data, X, Z, beta_true, gamma_true
 
@@ -61,14 +62,15 @@ def re_inputs():
     n_groups, n_data_per_group, eta = 5, 50, 1.0
     Z = np.kron(np.identity(n_groups), np.ones((n_data_per_group, 1)))
     u_true = np.random.randn(n_groups) * eta 
-    S = np.random.rand(n_groups * n_data_per_group)*0.01 + 0.01
-    e = np.random.randn(n_groups * n_data_per_group) * S
+    s = np.random.rand(n_groups * n_data_per_group)*0.01 + 0.01
+    e = np.random.randn(n_groups * n_data_per_group) * s
     y = np.dot(Z, u_true) + e
 
     # mock data
     mock_data = Mock()
     mock_data.obs = y
-    mock_data.obs_se = S
+    mock_data.y = y
+    mock_data.obs_se = s
     
     return mock_data, Z, u_true, eta 
 
