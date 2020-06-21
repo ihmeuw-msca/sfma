@@ -76,9 +76,12 @@ class LinearMixedEffectsMarginal(Base):
         r = data.y - self.X.dot(betas)
         return 0.5 * np.dot(r, np.linalg.solve(V, r)) + np.prod(np.linalg.slogdet(V)) * 0.5 + self.prior_fun(x)
 
-    def predict(self, x):
+    def forward(self, x, X=None):
         betas = x[:self.n_betas]
-        return np.dot(self.X, betas)
+        if X is None:
+            return np.dot(self.X, betas)
+        else: 
+            return np.dot(X, betas)
 
 
 class LinearMaximal(Base):
@@ -91,8 +94,11 @@ class LinearMaximal(Base):
         sigma = data.obs_se
         return np.sum((data.y - np.dot(self.design_matrix, x))**2 / (2*sigma**2)) + self.prior_fun(x)
 
-    def predict(self, x, **kwargs):
-        return np.dot(self.design_matrix, x)
+    def forward(self, x, mat=None):
+        if mat is None:
+            return np.dot(self.design_matrix, x)
+        else:
+            return np.dot(mat, x)
 
 
 class FixedEffectsMaximal(LinearMaximal):

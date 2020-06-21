@@ -13,13 +13,13 @@ class AlternatingSolver(CompositeSolver):
 
     def __init__(self, solvers_list: Optional[List[Solver]] = None):
         super().__init__(solvers_list)
-        if len(self.solvers) < 3:
+        if len(solvers_list) < 3:
             self.lme_solver = ScipyOpt(LinearMixedEffectsMarginal())
             self.u_solver = ClosedFormSolver(UModel())
             self.v_solver = ClosedFormSolver(VModel())
         else:
             self.lme_solver, self.u_solver, self.v_solver = solvers_list[:3]
-            self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
+        self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
 
     def _set_params(self, data: Data):
         lme_param_set = data.params[0]
@@ -31,7 +31,8 @@ class AlternatingSolver(CompositeSolver):
         self.v_solver.model.param_set = v_param_set
 
     def step(self, betas, gammas, us, vs, eta, data):
-        data.y = data.obs + np.dot(self.v_solver.model.Z, vs)
+        # data.y = data.obs + np.dot(self.v_solver.model.Z, vs)
+        data.y = data.obs + self.v_solver.model.forward(vs)
         beta_gamma = np.hstack((betas, gammas))
         self.lme_solver.fit(beta_gamma, data, options=dict(solver_options=dict(maxiter=100)))
         beta_gamma = self.lme_solver.x_opt
@@ -39,12 +40,14 @@ class AlternatingSolver(CompositeSolver):
         gammas = beta_gamma[len(betas):]
         # fitting us
         self.u_solver.gammas = gammas
-        data.y -= np.dot(self.lme_solver.model.X, betas)
+        #data.y -= np.dot(self.lme_solver.model.X, betas)
+        data.y -= self.lme_solver.model.forward(beta_gamma)
         self.u_solver.fit(us, data)
         us = self.u_solver.x_opt
         # fitting vs
         self.v_solver.gammas = [eta] 
-        data.y = np.dot(self.lme_solver.model.X, betas) + np.dot(self.u_solver.model.Z, us) - data.obs 
+        #data.y = np.dot(self.lme_solver.model.X, betas) + np.dot(self.u_solver.model.Z, us) - data.obs 
+        data.y = self.lme_solver.model.forward(beta_gamma) + self.u_solver.model.forward(us) - data.obs
         self.v_solver.fit(vs, data)
         vs = self.v_solver.x_opt
         # fitting eta
@@ -81,12 +84,15 @@ class AlternatingSolver(CompositeSolver):
         self.x_opt = [self.beta_final, self.gamma_final, self.u_final, self.v_final, self.eta_final]
         self.fun_val_opt = self.error(self.x_opt, data)
 
-    def predict(self, x):
-        betas, _, us, vs, _ = x
-        return self.lme_solver.model.predict(betas) + self.u_solver.model.predict(us) - self.v_solver.model.predict(vs)
+    def predict(self):
+        return self.lme_solver.predict() + self.u_solver.predict() - self.v_solver.predict()
+
+    def forward(self, x):
+        betas, gammas, us, vs, _ = x
+        return self.lme_solver.model.forward(np.hstack((betas, gammas))) + self.u_solver.model.forward(us) - self.v_solver.model.forward(vs)
 
     def error(self, x, data: Data):
-        return np.mean((data.obs - self.predict(x))**2 / data.obs_se**2)
+        return np.mean((data.obs - self.forward(x))**2 / data.obs_se**2)
 
 
 
