@@ -56,9 +56,8 @@ class LinearMixedEffectsMarginal(Base):
         
         self.lb = np.hstack((self._param_set.lb_fe, self._param_set.lb_re_var))
         self.ub = np.hstack((self._param_set.ub_fe, self._param_set.ub_re_var)) 
-        self.bounds = Bounds(self.lb, self.ub)
         
-        self.constraints = build_linear_constraint([
+        self.C, self.c_lb, self.c_ub = build_linear_constraint([
             (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe),
             (self._param_set.constr_matrix_re_var, self._param_set.constr_lb_re_var, self._param_set.constr_ub_re_var),
         ])
@@ -109,8 +108,8 @@ class BetaModel(LinearMaximal):
         self.X = self._param_set.design_matrix_fe
         self.lb = self._param_set.lb_fe
         self.ub = self._param_set.ub_fe
-        self.bounds = Bounds(self.lb, self.ub)
-        self.constraints = build_linear_constraint([
+
+        self.C, self.lb, self.ub = build_linear_constraint([
             (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe)
         ])
         self.prior_fun = collect_priors(self._param_set.fe_priors)
@@ -140,8 +139,8 @@ class UModel(LinearMaximal):
         self.D = self._param_set.re_var_padding
         self.lb = self._param_set.lb_re
         self.ub = self._param_set.ub_re
-        self.bounds = Bounds(self.lb, self.ub)
-        self.constraints = build_linear_constraint([
+
+        self.C, self.c_lb, self.c_ub = build_linear_constraint([
             (self._param_set.constr_matrix_re, self._param_set.constr_lb_re, self._param_set.constr_ub_re)
         ])
         self.gammas_padded = np.array([prior.std[0] for prior in self._param_set.re_priors])
@@ -184,8 +183,8 @@ def build_linear_constraint(constraints: List[Tuple[np.ndarray, np.ndarray, np.n
     if len(constraints) == 1:
         mats, lbs, ubs = constraints[0]
     mats, lbs, ubs = zip(*constraints)
-    A, lb, ub = combine_constraints(mats, lbs, ubs)
-    if np.count_nonzero(A) == 0:
-        return None 
+    C, c_lb, c_ub = combine_constraints(mats, lbs, ubs)
+    if np.count_nonzero(C) == 0:
+        return None, None, None 
     else:
-        return LinearConstraint(A, lb, ub)
+        return C, c_lb, c_ub
