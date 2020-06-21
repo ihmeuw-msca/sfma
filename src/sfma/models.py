@@ -24,8 +24,6 @@ class Base(Model):
             self._param_set = None
 
     def _prerun_check(self, x):
-        if self._param_set is None:
-            raise ValueError('Parameters are not defined for this model.')
         if len(x) != self.x_dim:
             raise TypeError(f'length of x = {len(x)} is not equal to the number of unknowns = {self.x_dim}.')
 
