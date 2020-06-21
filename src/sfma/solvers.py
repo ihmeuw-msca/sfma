@@ -17,6 +17,8 @@ class AlternatingSolver(CompositeSolver):
             self.lme_solver = ScipyOpt(LinearMixedEffectsMarginal())
             self.u_solver = ClosedFormSolver(UModel())
             self.v_solver = ClosedFormSolver(VModel())
+        else:
+            self.lme_solver, self.u_solver, self.v_solver = solvers_list[:3]
             self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
 
     def set_params(self, data: Data):

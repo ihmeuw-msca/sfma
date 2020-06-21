@@ -102,7 +102,7 @@ class FixedEffectsMaximal(LinearMaximal):
     def init_model(self):
         self.x_dim = self._param_set.num_fe
         
-        self.design_matrix = self._param_set.design_matrix_fe
+        self.X = self._param_set.design_matrix_fe
         self.lb = self._param_set.lb_fe
         self.ub = self._param_set.ub_fe
         self.bounds = Bounds(self.lb, self.ub)
@@ -112,8 +112,8 @@ class FixedEffectsMaximal(LinearMaximal):
         self.prior_fun = collect_priors(self._param_set.fe_priors)
 
     @property
-    def X(self):
-        return self.design_matrix
+    def design_matrix(self):
+        return self.X
 
 
 class UModel(LinearMaximal):
@@ -126,7 +126,7 @@ class UModel(LinearMaximal):
 
     def init_model(self):
         self.x_dim = self._param_set.num_re
-        self.design_matrix = self._param_set.design_matrix_re
+        self.Z = self._param_set.design_matrix_re
         self.D = self._param_set.re_var_padding
         self.lb = self._param_set.lb_re
         self.ub = self._param_set.ub_re
@@ -137,8 +137,8 @@ class UModel(LinearMaximal):
         self.gammas = [prior.std[0] for prior in self._param_set.re_priors]
 
     @property
-    def Z(self):
-        return self.design_matrix
+    def design_matrix(self):
+        return self.Z
 
     @property
     def prior_fun(self):
