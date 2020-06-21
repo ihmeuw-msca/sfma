@@ -120,8 +120,10 @@ class BetaModel(LinearMaximal):
         return self.X
 
     def closed_form_soln(self, data: Data):
+        # only valid when no constraints, no bounds and no priors
+        # used for sanity check
         x = np.linalg.solve(np.dot(self.X.T / data.obs_se **2, self.X), np.dot(self.X.T, data.y))
-        return np.minimum(self.ub, np.maximum(self.lb, x))
+        return x
 
 
 class UModel(LinearMaximal):
