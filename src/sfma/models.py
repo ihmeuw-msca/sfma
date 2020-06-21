@@ -121,7 +121,7 @@ class BetaModel(LinearMaximal):
     def closed_form_soln(self, data: Data):
         # only valid when no constraints, no bounds and no priors
         # used for sanity check
-        x = np.linalg.solve(np.dot(self.X.T / data.obs_se **2, self.X), np.dot(self.X.T, data.y))
+        x = np.linalg.solve(np.dot(self.X.T / data.obs_se **2, self.X), np.dot(self.X.T, data.y / data.obs_se ** 2))
         return x
 
 
@@ -167,7 +167,7 @@ class UModel(LinearMaximal):
     def closed_form_soln(self, data: Data):
         sigma = data.obs_se 
         return np.linalg.solve(
-            np.dot(self.Z.T, np.dot(np.diag(1/sigma**2), self.Z)) + np.diag(1.0/self.gammas_padded), 
+            np.dot(self.Z.T / sigma**2, self.Z) + np.diag(1.0/self.gammas_padded), 
             np.dot(self.Z.T, data.y / sigma**2),
         )
     
