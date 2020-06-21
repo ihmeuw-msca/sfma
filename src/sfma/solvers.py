@@ -30,32 +30,60 @@ class AlternatingSolver(CompositeSolver):
         self.u_solver.model.param_set = u_param_set
         self.v_solver.model.param_set = v_param_set
 
-    def step(self, betas, gammas, us, vs, eta, data):
-        data.y = data.obs + self.v_solver.model.forward(vs)
-        beta_gamma = np.hstack((betas, gammas))
+    def step(self, data, verbose=True):
+        data.y = data.obs + self.v_solver.model.forward(self.vs_curr)
+        beta_gamma = np.hstack((self.betas_curr, self.gammas_curr))
         self.lme_solver.fit(beta_gamma, data, options=dict(solver_options=dict(maxiter=100)))
         beta_gamma = self.lme_solver.x_opt
-        betas = beta_gamma[:len(betas)]
-        gammas = beta_gamma[len(betas):]
+        self.betas_curr = beta_gamma[:len(self.betas_curr)]
+        self.gammas_curr = beta_gamma[len(self.betas_curr):]
         
         # fitting us
-        self.u_solver.model.gammas = gammas
+        self.u_solver.model.gammas = self.gammas_curr
         data.y -= self.lme_solver.model.forward(beta_gamma)
-        self.u_solver.fit(us, data)
-        us = self.u_solver.x_opt
+        self.u_solver.fit(self.us_curr, data)
+        self.us_curr = self.u_solver.x_opt
         
         # fitting vs
-        self.v_solver.model.gammas = [eta] 
-        data.y = self.lme_solver.model.forward(beta_gamma) + self.u_solver.model.forward(us) - data.obs
-        self.v_solver.fit(vs, data)
-        vs = self.v_solver.x_opt
-        
+        self.v_solver.model.gammas = [self.eta_curr] 
+        data.y = self.lme_solver.model.forward(beta_gamma) + self.u_solver.model.forward(self.us_curr) - data.obs
+        self.v_solver.fit(self.vs_curr, data)
+        self.vs_curr = self.v_solver.x_opt
+
         # fitting eta
         # eta = [np.std(vs) ** 2]
-        return betas, gammas, us, vs, eta
 
-    def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
-        betas, gammas, us, vs, eta = x_init 
+        if verbose:
+            self.print_x_curr()
+
+    @property 
+    def x_curr(self):
+        self._x_curr = [self.betas_curr, self.gammas_curr, self.us_curr, self.vs_curr, self.eta_curr]
+        return self._x_curr
+
+    @x_curr.setter
+    def x_curr(self, x):
+        if x is not None:
+            assert len(x) == 5
+            self._x_curr = x
+            self.betas_curr = x[0]
+            self.gammas_curr = x[1]
+            self.us_curr = x[2]
+            self.vs_curr = x[3]
+            self.eta_curr = x[4]
+        else:
+            self._x_curr = None
+
+    def print_x_curr(self):
+        print(f'betas = {self.betas_curr}')
+        print(f'gammas = {self.gammas_curr}')
+        print(f'us = {self.us_curr}')
+        print(f'vs = {self.vs_curr}')
+        print(f'eta = {self.eta_curr}')
+
+    def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, verbose=True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
+        self.betas_curr, self.gammas_curr, self.us_curr, self.vs_curr, self.eta_curr = x_init 
+        
         data.y = deepcopy(data.obs)
         if set_params:
             self._set_params(data)
@@ -63,26 +91,16 @@ class AlternatingSolver(CompositeSolver):
         self.errors_hist = []
         itr = 0
         while itr < options['maxiter']:
-            betas, gammas, us, vs, eta = self.step(betas, gammas, us, vs, eta, data)
-            self.errors_hist.append(self.error([betas, gammas, us, vs, eta], data))
-            if 'verbose' in options and options['verbose']:
-                print('-------------')
-                print(f'iter {itr} \t error = {self.errors_hist[-1]}')
-                print(f'betas = {betas}')
-                print(f'gammas = {gammas}')
-                print(f'us = {us}')
-                print(f'vs = {vs}')
-                print(f'eta = {eta}')
+            if verbose:
+                print('-' * 10, f'iter {itr}', '-' * 10)
+            self.step(data, verbose)
+            self.errors_hist.append(self.error(data))
+            if verbose:
+                print(f'error = {self.errors_hist[-1]}')
             itr += 1
-        
-        self.beta_final = betas
-        self.gamma_final = gammas
-        self.u_final = us 
-        self.v_final = vs 
-        self.eta_final = eta 
 
-        self.x_opt = [self.beta_final, self.gamma_final, self.u_final, self.v_final, self.eta_final]
-        self.fun_val_opt = self.error(self.x_opt, data)
+        self.x_opt = [self.betas_curr, self.gammas_curr, self.us_curr, self.vs_curr, self.eta_curr]
+        self.fun_val_opt = self.error(data)
 
     def predict(self):
         return self.lme_solver.predict() + self.u_solver.predict() - self.v_solver.predict()
@@ -90,8 +108,10 @@ class AlternatingSolver(CompositeSolver):
     def forward(self, x):
         betas, gammas, us, vs, _ = x
         return self.lme_solver.model.forward(np.hstack((betas, gammas))) + self.u_solver.model.forward(us) - self.v_solver.model.forward(vs)
-
-    def error(self, x, data: Data):
+    
+    def error(self, data: Data, x = None):
+        if x is None:
+            x = self.x_curr
         return np.mean((data.obs - self.forward(x))**2 / data.obs_se**2)
 
 

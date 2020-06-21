@@ -67,14 +67,17 @@ def test_alternating_solver(sfa_inputs):
     v_init = np.zeros(len(v_true)) + 0.1
     eta_init = [np.random.rand()]
 
-    betas, _, _, _, _ = alt_solver.step(beta_init, gamma_init, u_true, v_true, eta_true, data)
-    assert np.linalg.norm(betas - beta_true)/ np.linalg.norm(beta_true) < 2e-2
+    alt_solver.x_curr = [beta_init, gamma_init, u_true, v_true, eta_true]
+    alt_solver.step(data, verbose=False)
+    assert np.linalg.norm(alt_solver.betas_curr - beta_true)/ np.linalg.norm(beta_true) < 2e-2
 
-    _, _, us, _, _ = alt_solver.step(beta_true, gamma_true, u_init, v_true, eta_true, data)
-    assert np.linalg.norm(us - u_true)/ np.linalg.norm(u_true) < 2e-2
+    alt_solver.x_curr = [beta_true, gamma_true, u_init, v_true, eta_true]
+    alt_solver.step(data, verbose=False)
+    assert np.linalg.norm(alt_solver.us_curr - u_true)/ np.linalg.norm(u_true) < 2e-2
 
-    _, _, _, vs, _ = alt_solver.step(beta_true, gamma_true, u_true, v_init, eta_true, data)
-    assert np.linalg.norm(vs - v_true)/ np.linalg.norm(v_true) < 5e-2
+    alt_solver.x_curr = [beta_true, gamma_true, u_true, v_init, eta_true]
+    alt_solver.step(data, verbose=False)
+    assert np.linalg.norm(alt_solver.vs_curr - v_true)/ np.linalg.norm(v_true) < 5e-2
 
     # test fit
-    alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, set_params=False, options=dict(maxiter=2))
+    alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, verbose=False, set_params=False, options=dict(maxiter=2))
