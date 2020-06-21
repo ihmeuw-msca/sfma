@@ -101,7 +101,7 @@ class LinearMaximal(Base):
             return np.dot(mat, x)
 
 
-class FixedEffectsMaximal(LinearMaximal):
+class BetaModel(LinearMaximal):
 
     def init_model(self):
         self.x_dim = self._param_set.num_fe
@@ -113,11 +113,16 @@ class FixedEffectsMaximal(LinearMaximal):
         self.constraints = build_linear_constraint([
             (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe)
         ])
-        self.prior_fun = collect_priors(self._param_set.fe_priors)
+        # self.prior_fun = collect_priors(self._param_set.fe_priors)
+        self.prior_fun = lambda x: 0.0
 
     @property
     def design_matrix(self):
         return self.X
+
+    def closed_form_soln(self, data: Data):
+        x = np.linalg.solve(np.dot(self.X.T / data.obs_se **2, self.X), np.dot(self.X.T, data.y))
+        return np.minimum(self.ub, np.maximum(self.lb, x))
 
 
 class UModel(LinearMaximal):
