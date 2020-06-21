@@ -7,15 +7,22 @@
 import numpy as np
 import pandas as pd
 from typing import List, Union
+from dataclasses import dataclass
 
-from anml.data.data_specs import DataSpecs
 from anml.parameter.parameter import ParameterSet
 from anml.parameter.variables import Variable
 
 
+@dataclass
+class DataSpecs:
+
+    col_obs: str 
+    col_obs_se: str
+
+
 class Data:
 
-    def __init__(self, data_specs: DataSpecs, params: List[ParameterSet]):
+    def __init__(self, data_specs: DataSpecs, params: List[ParameterSet] = None):
         self.data_specs = data_specs
         self.params = params
     
