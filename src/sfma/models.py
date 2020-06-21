@@ -109,7 +109,7 @@ class BetaModel(LinearMaximal):
         self.lb = self._param_set.lb_fe
         self.ub = self._param_set.ub_fe
 
-        self.C, self.lb, self.ub = build_linear_constraint([
+        self.C, self.c_lb, self.c_ub = build_linear_constraint([
             (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe)
         ])
         self.prior_fun = collect_priors(self._param_set.fe_priors)
