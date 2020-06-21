@@ -139,6 +139,16 @@ class UModel(LinearMaximal):
             (self._param_set.constr_matrix_re, self._param_set.constr_lb_re, self._param_set.constr_ub_re)
         ])
         self.gammas_padded = np.array([prior.std[0] for prior in self._param_set.re_priors])
+        self._gammas = None
+
+    @property
+    def gammas(self):
+        return self._gammas
+
+    @gammas.setter
+    def gammas(self, new_gammas):
+        self._gammas = new_gammas
+        self.gammas_padded = np.dot(self.D, new_gammas)
 
     @property
     def design_matrix(self):
