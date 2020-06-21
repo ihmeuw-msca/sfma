@@ -32,8 +32,7 @@ def sfa_inputs():
 
     return mock_data, X, Z_u, Z_v, beta_true, gamma_true, eta_true, u_true, v_true
 
-@patch.object(Base, '_prerun_check', lambda x, y: None)
-@patch.object(AlternatingSolver, 'set_params', lambda x, y: None)
+
 @patch.object(UModel, 'init_model', lambda: None)
 @patch.object(LinearMixedEffectsMarginal, 'init_model', lambda: None)
 def test_alternating_solver(sfa_inputs):
@@ -78,4 +77,4 @@ def test_alternating_solver(sfa_inputs):
     assert np.linalg.norm(vs - v_true)/ np.linalg.norm(v_true) < 5e-2
 
     # test fit
-    alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, options=dict(maxiter=2))
+    alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, set_params=False, options=dict(maxiter=2))

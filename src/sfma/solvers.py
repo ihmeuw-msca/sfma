@@ -21,7 +21,7 @@ class AlternatingSolver(CompositeSolver):
             self.lme_solver, self.u_solver, self.v_solver = solvers_list[:3]
             self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
 
-    def set_params(self, data: Data):
+    def _set_params(self, data: Data):
         lme_param_set = data.params[0]
         u_param_set = data.params[1]
         v_param_set = data.params[2]
@@ -51,10 +51,11 @@ class AlternatingSolver(CompositeSolver):
         eta = [np.std(vs) ** 2]
         return betas, gammas, us, vs, eta
 
-    def fit(self, x_init: List[np.ndarray], data: Data, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
+    def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
         betas, gammas, us, vs, eta = x_init 
         data.y = deepcopy(data.obs)
-        self.set_params(data)
+        if set_params:
+            self._set_params(data)
         
         self.errors_hist = []
         itr = 0
