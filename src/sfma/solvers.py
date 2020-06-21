@@ -39,19 +39,19 @@ class AlternatingSolver(CompositeSolver):
         gammas = beta_gamma[len(betas):]
         
         # fitting us
-        self.u_solver.gammas = gammas
+        self.u_solver.model.gammas = gammas
         data.y -= self.lme_solver.model.forward(beta_gamma)
         self.u_solver.fit(us, data)
         us = self.u_solver.x_opt
         
         # fitting vs
-        self.v_solver.gammas = [eta] 
+        self.v_solver.model.gammas = [eta] 
         data.y = self.lme_solver.model.forward(beta_gamma) + self.u_solver.model.forward(us) - data.obs
         self.v_solver.fit(vs, data)
         vs = self.v_solver.x_opt
         
         # fitting eta
-        eta = [np.std(vs) ** 2]
+        # eta = [np.std(vs) ** 2]
         return betas, gammas, us, vs, eta
 
     def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
