@@ -153,7 +153,7 @@ class UModel(LinearMaximal):
     @gammas.setter
     def gammas(self, new_gammas):
         self._gammas = new_gammas
-        self.gammas_padded = np.dot(self.D, new_gammas)
+        self.gammas_padded = np.squeeze(np.dot(self.D, new_gammas))
 
     @property
     def design_matrix(self):
@@ -167,7 +167,7 @@ class UModel(LinearMaximal):
     def closed_form_soln(self, data: Data):
         sigma = data.obs_se 
         return np.linalg.solve(
-            np.dot(self.Z.T / sigma**2, self.Z) + np.diag(np.squeeze(1.0/self.gammas_padded)), 
+            np.dot(self.Z.T / sigma**2, self.Z) + np.diag(1.0/self.gammas_padded), 
             np.dot(self.Z.T, data.y / sigma**2),
         )
     
