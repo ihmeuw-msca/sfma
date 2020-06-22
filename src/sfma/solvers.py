@@ -31,6 +31,7 @@ class AlternatingSolver(CompositeSolver):
         self.v_solver.model.param_set = v_param_set
 
     def step(self, data, verbose=True):
+        # fitting betas
         data.y = data.obs + self.v_solver.model.forward(self.vs_curr)
         beta_gamma = np.hstack((self.betas_curr, self.gammas_curr))
         self.lme_solver.fit(beta_gamma, data, options=dict(solver_options=dict(maxiter=100)))
@@ -51,7 +52,7 @@ class AlternatingSolver(CompositeSolver):
         self.vs_curr = self.v_solver.x_opt
 
         # fitting eta
-        self.eta_curr = [np.std(self.vs_curr) ** 2]
+        # self.eta_curr = [np.std(self.vs_curr) ** 2]
 
         if verbose:
             self.print_x_curr()
