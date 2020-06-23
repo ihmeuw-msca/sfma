@@ -52,7 +52,7 @@ class AlternatingSolver(CompositeSolver):
         self.vs_curr = self.v_solver.x_opt
 
         # fitting eta
-        # self.eta_curr = [np.std(self.vs_curr) ** 2]
+        self.eta_curr = [np.std(self.vs_curr) ** 2]
 
         if verbose:
             self.print_x_curr()

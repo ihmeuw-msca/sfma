@@ -7,7 +7,8 @@ from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior
 from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models import LinearMixedEffectsMarginal, UModel
+from sfma.models.base import LinearMarginal
+from sfma.models.models import UModel
 
 
 @pytest.fixture
@@ -58,7 +59,7 @@ def test_lme_marginal(lme_inputs):
         param_set.fe_priors = []
         param_set.re_var_priors = []
         
-        model = LinearMixedEffectsMarginal(param_set)
+        model = LinearMarginal(param_set)
         solver = ScipyOpt(model)
         x_init = np.random.rand(len(beta_true) + len(gamma_true))
         solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
