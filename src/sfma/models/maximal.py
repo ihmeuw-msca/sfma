@@ -4,9 +4,20 @@ from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior
 from anml.parameter.utils import collect_priors
 
-from sfma.models.base import LinearMaximal
+from sfma.models.base import LinearModel
 from sfma.data import Data
 from sfma.models.utils import build_linear_constraint
+
+
+class LinearMaximal(LinearModel):
+
+    def __init__(self, param_set_processed: ParameterSet = None):
+        super().__init__(param_set_processed)
+    
+    def objective(self, x, data: Data):
+        self._prerun_check(x)
+        sigma = data.obs_se
+        return np.sum((data.y - np.dot(self.design_matrix, x))**2 / (2*sigma**2)) + self.prior_fun(x)
 
 
 class BetaModel(LinearMaximal):

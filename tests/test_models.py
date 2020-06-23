@@ -7,8 +7,8 @@ from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior
 from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models.base import LinearMarginal
-from sfma.models.models import UModel
+from sfma.models.marginal import LinearMarginal
+from sfma.models.maximal import UModel
 
 
 @pytest.fixture
