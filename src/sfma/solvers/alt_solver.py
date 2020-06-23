@@ -1,16 +1,16 @@
 import numpy as np
 from typing import List, Dict, Optional
-from copy import deepcopy
 
-from anml.solvers.interface import CompositeSolver, Solver
 from anml.solvers.base import IPOPTSolver, ClosedFormSolver
+from anml.solvers.interface import Solver
 
 from sfma.data import Data
-from sfma.models.base import LinearMarginal
-from sfma.models.models import UModel, VModel
+from sfma.models.marginal import LinearMarginal
+from sfma.models.maximal import UModel, VModel
+from sfma.solvers.base import IterativeSolver
 
 
-class AlternatingSolver(CompositeSolver):
+class AlternatingSolver(IterativeSolver):
 
     def __init__(self, solvers_list: Optional[List[Solver]] = None):
         super().__init__(solvers_list)
@@ -18,18 +18,9 @@ class AlternatingSolver(CompositeSolver):
             self.lme_solver = IPOPTSolver(LinearMarginal())
             self.u_solver = ClosedFormSolver(UModel())
             self.v_solver = ClosedFormSolver(VModel())
+            self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
         else:
             self.lme_solver, self.u_solver, self.v_solver = solvers_list
-        self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
-
-    def _set_params(self, data: Data):
-        lme_param_set = data.params[0]
-        u_param_set = data.params[1]
-        v_param_set = data.params[2]
-
-        self.lme_solver.model.param_set = lme_param_set
-        self.u_solver.model.param_set = u_param_set
-        self.v_solver.model.param_set = v_param_set
 
     def step(self, data, verbose=True):
         # fitting betas
@@ -53,7 +44,7 @@ class AlternatingSolver(CompositeSolver):
         self.vs_curr = self.v_solver.x_opt
 
         # fitting eta
-        self.eta_curr = [np.std(self.vs_curr) ** 2]
+        self.eta_curr = [np.mean(self.vs_curr**2)]
 
         if verbose:
             self.print_x_curr()
@@ -68,11 +59,7 @@ class AlternatingSolver(CompositeSolver):
         if x is not None:
             assert len(x) == 5
             self._x_curr = x
-            self.betas_curr = x[0]
-            self.gammas_curr = x[1]
-            self.us_curr = x[2]
-            self.vs_curr = x[3]
-            self.eta_curr = x[4]
+            self.betas_curr, self.gammas_curr, self.us_curr, self.vs_curr, self.eta_curr = x
         else:
             self._x_curr = None
 
@@ -83,38 +70,13 @@ class AlternatingSolver(CompositeSolver):
         print(f'vs = {self.vs_curr}')
         print(f'eta = {self.eta_curr}')
 
-    def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, verbose=True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
-        self.betas_curr, self.gammas_curr, self.us_curr, self.vs_curr, self.eta_curr = x_init 
-        
-        data.y = deepcopy(data.obs)
-        if set_params:
-            self._set_params(data)
-        
-        self.errors_hist = []
-        itr = 0
-        while itr < options['maxiter']:
-            if verbose:
-                print('-' * 10, f'iter {itr}', '-' * 10)
-            self.step(data, verbose)
-            self.errors_hist.append(self.error(data))
-            if verbose:
-                print(f'error = {self.errors_hist[-1]}')
-            itr += 1
-
-        self.x_opt = [self.betas_curr, self.gammas_curr, self.us_curr, self.vs_curr, self.eta_curr]
-        self.fun_val_opt = self.error(data)
-
     def predict(self):
         return self.lme_solver.predict() + self.u_solver.predict() - self.v_solver.predict()
 
     def forward(self, x):
         betas, gammas, us, vs, _ = x
         return self.lme_solver.model.forward(np.hstack((betas, gammas))) + self.u_solver.model.forward(us) - self.v_solver.model.forward(vs)
-    
-    def error(self, data: Data, x = None):
-        if x is None:
-            x = self.x_curr
-        return np.mean((data.obs - self.forward(x))**2 / data.obs_se**2)
+
 
 
 

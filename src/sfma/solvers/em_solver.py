@@ -2,28 +2,25 @@ import numpy as np
 from typing import List, Dict, Optional
 from copy import deepcopy
 
-from anml.solvers.interface import CompositeSolver, Solver
+from anml.solvers.interface import Solver
 from anml.solvers.base import IPOPTSolver, ClosedFormSolver
 
 from sfma.data import Data
-from sfma.models.base import LinearMarginal
-from sfma.models.models import UModel, VModel
+from sfma.models.marginal import LinearMarginal
+from sfma.models.maximal import UModel, VModel
+from sfma.solvers.base import IterativeSolver
 
 
-class EMSolver(CompositeSolver):
+class EMSolver(IterativeSolver):
 
     def __init__(self, solvers_list: Optional[List[Solver]] = None):
         super().__init__(solvers_list)
         if len(solvers_list) != 2:
             self.beta_solver = IPOPTSolver(LinearMarginal())
             self.v_solver = ClosedFormSolver(VModel())
+            self.solvers = [self.beta_solver, self.v_solver]
         else:
             self.beta_solver, self.v_solver = solvers_list
-        self.solvers = [self.beta_solver, self.v_solver]
-
-    def _set_params(self, data: Data):
-        self.beta_solver.model.param_set = data.params[0]
-        self.v_solver.model.param_set = data.params[1]
 
     def step(self, data, verbose=True):
         # fitting betas
@@ -56,9 +53,7 @@ class EMSolver(CompositeSolver):
         if x is not None:
             assert len(x) == 3
             self._x_curr = x
-            self.betas_curr = x[0]
-            self.vs_curr = x[1]
-            self.eta_curr = x[2]
+            self.betas_curr, self.vs_curr, self.eta_curr = x
         else:
             self._x_curr = None
 
@@ -67,35 +62,9 @@ class EMSolver(CompositeSolver):
         print(f'vs = {self.vs_curr}')
         print(f'eta = {self.eta_curr}')
 
-    def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, verbose=True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
-        self.x_curr = x_init 
-        
-        data.y = deepcopy(data.obs)
-        if set_params:
-            self._set_params(data)
-        
-        self.errors_hist = []
-        itr = 0
-        while itr < options['maxiter']:
-            if verbose:
-                print('-' * 10, f'iter {itr}', '-' * 10)
-            self.step(data, verbose)
-            self.errors_hist.append(self.error(data))
-            if verbose:
-                print(f'error = {self.errors_hist[-1]}')
-            itr += 1
-
-        self.x_opt = self.x_curr
-        self.fun_val_opt = self.error(data)
-
     def predict(self):
         return self.beta_solver.predict() - self.v_solver.predict()
 
     def forward(self, x):
         betas, vs, _ = x
         return self.beta_solver.model.forward(betas) - self.v_solver.model.forward(vs)
-    
-    def error(self, data: Data, x = None):
-        if x is None:
-            x = self.x_curr
-        return np.mean((data.obs - self.forward(x))**2 / data.obs_se**2)
