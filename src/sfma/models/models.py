@@ -86,3 +86,4 @@ class VModel(UModel):
     def closed_form_soln(self, data: Data):
         soln = super().closed_form_soln(data)
         return np.maximum(0, soln)
+        

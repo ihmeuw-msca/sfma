@@ -3,7 +3,7 @@ from typing import List, Dict, Optional
 from copy import deepcopy
 
 from anml.solvers.interface import CompositeSolver, Solver
-from anml.solvers.base import ScipyOpt, ClosedFormSolver
+from anml.solvers.base import IPOPTSolver, ClosedFormSolver
 
 from sfma.data import Data
 from sfma.models.base import LinearMarginal
@@ -14,12 +14,12 @@ class AlternatingSolver(CompositeSolver):
 
     def __init__(self, solvers_list: Optional[List[Solver]] = None):
         super().__init__(solvers_list)
-        if len(solvers_list) < 3:
-            self.lme_solver = ScipyOpt(LinearMarginal())
+        if len(solvers_list) != 3:
+            self.lme_solver = IPOPTSolver(LinearMarginal())
             self.u_solver = ClosedFormSolver(UModel())
             self.v_solver = ClosedFormSolver(VModel())
         else:
-            self.lme_solver, self.u_solver, self.v_solver = solvers_list[:3]
+            self.lme_solver, self.u_solver, self.v_solver = solvers_list
         self.solvers = [self.lme_solver, self.u_solver, self.v_solver]
 
     def _set_params(self, data: Data):
