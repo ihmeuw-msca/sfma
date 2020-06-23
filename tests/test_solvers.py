@@ -5,8 +5,8 @@ import pytest
 from anml.parameter.prior import GaussianPrior, Prior
 from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models.base import LinearMarginal
-from sfma.models.models import UModel, VModel
+from sfma.models.marginal import LinearMarginal
+from sfma.models.maximal import UModel, VModel
 from sfma.solvers.alt_solver import AlternatingSolver
 
 
