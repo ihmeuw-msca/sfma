@@ -81,6 +81,10 @@ class LinearMarginal(LinearModel):
     def design_matrix(self):
         return self.X
 
+    def forward(self, x, mat=None):
+        betas = x[:self.n_betas]
+        return super().forward(betas, mat)
+
 
 class LinearMaximal(LinearModel):
 

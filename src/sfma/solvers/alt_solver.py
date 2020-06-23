@@ -6,7 +6,8 @@ from anml.solvers.interface import CompositeSolver, Solver
 from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
 from sfma.data import Data
-from sfma.models import LinearMixedEffectsMarginal, UModel, VModel
+from sfma.models.base import LinearMarginal
+from sfma.models.models import UModel, VModel
 
 
 class AlternatingSolver(CompositeSolver):
@@ -14,7 +15,7 @@ class AlternatingSolver(CompositeSolver):
     def __init__(self, solvers_list: Optional[List[Solver]] = None):
         super().__init__(solvers_list)
         if len(solvers_list) < 3:
-            self.lme_solver = ScipyOpt(LinearMixedEffectsMarginal())
+            self.lme_solver = ScipyOpt(LinearMarginal())
             self.u_solver = ClosedFormSolver(UModel())
             self.v_solver = ClosedFormSolver(VModel())
         else:

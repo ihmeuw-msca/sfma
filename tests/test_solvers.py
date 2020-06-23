@@ -5,8 +5,9 @@ import pytest
 from anml.parameter.prior import GaussianPrior, Prior
 from anml.solvers.base import ScipyOpt, ClosedFormSolver
 
-from sfma.models import LinearMixedEffectsMarginal, UModel, VModel, Base
-from sfma.solvers import AlternatingSolver
+from sfma.models.base import LinearMarginal
+from sfma.models.models import UModel, VModel
+from sfma.solvers.alt_solver import AlternatingSolver
 
 
 @pytest.fixture
@@ -34,12 +35,12 @@ def sfa_inputs():
 
 
 @patch.object(UModel, 'init_model', lambda: None)
-@patch.object(LinearMixedEffectsMarginal, 'init_model', lambda: None)
+@patch.object(LinearMarginal, 'init_model', lambda: None)
 def test_alternating_solver(sfa_inputs):
     data, X, Z_u, Z_v, beta_true, gamma_true, eta_true, u_true, v_true = sfa_inputs
     n_beta, n_gamma, n_u, n_v = len(beta_true), 1, len(u_true), len(v_true)
     
-    lme_model = LinearMixedEffectsMarginal()
+    lme_model = LinearMarginal()
     lme_model.x_dim = n_beta + n_gamma
     lme_model.n_betas = n_beta
     lme_model.X = X
