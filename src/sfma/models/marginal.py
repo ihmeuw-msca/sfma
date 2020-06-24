@@ -37,10 +37,10 @@ class LinearMarginal(LinearModel):
         betas = x[:self.n_betas]
         gammas = x[self.n_betas:]
 
-        Sigma = np.diag(data.obs_se)
+        Sigma2 = np.diag(data.sigma2)
         Gamma = np.diag(np.dot(self.D, gammas))
 
-        V = Sigma**2 + np.dot(self.Z,np.dot(Gamma, self.Z.T))
+        V = Sigma2 + np.dot(self.Z,np.dot(Gamma, self.Z.T))
         r = data.y - self.X.dot(betas)
         return 0.5 * np.dot(r, np.linalg.solve(V, r)) + np.prod(np.linalg.slogdet(V)) * 0.5 + self.prior_fun(x)
 
