@@ -36,6 +36,7 @@ class IterativeSolver(CompositeSolver):
         self.x_curr = x_init 
         
         data.y = deepcopy(data.obs)
+        data.sigma2 = deepcopy(data.obs_se**2)
         
         if set_params:
             self._set_params()
