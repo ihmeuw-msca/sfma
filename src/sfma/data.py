@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Union
 from dataclasses import dataclass
+from copy import deepcopy
 
 from anml.parameter.parameter import ParameterSet
 from anml.parameter.variables import Variable
@@ -31,4 +32,9 @@ class Data:
         self.obs_se = df[self.data_specs.col_obs_se].to_numpy()
         self.y = df[self.data_specs.col_obs].to_numpy()
         self.sigma2 = df[self.data_specs.col_obs_se].to_numpy()**2
+
+    def reset(self):
+        self.sigma2 = (self.obs_se)**2
+        self.y = deepcopy(self.obs)
+
 

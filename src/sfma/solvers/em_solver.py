@@ -40,7 +40,7 @@ class EMSolver(IterativeSolver):
         sigma2_v_cond = (1 - 2 / np.pi) * sigma2_v
         self.eta_curr = [np.mean(self.vs_curr**2 + sigma2_v_cond)]
 
-        data.sigma2 = np.ones(len(data.y)) * np.mean(np.dot(data.y, data.y + self.v_solver.model.forward(self.vs_curr)))
+        data.sigma2 = np.ones(len(data.y)) * np.mean(np.dot(data.y, data.y - self.v_solver.model.forward(self.vs_curr)))
 
         if verbose:
             self.print_x_curr()
