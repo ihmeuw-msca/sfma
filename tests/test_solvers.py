@@ -30,6 +30,7 @@ def sfa_inputs():
     mock_data.obs = y 
     mock_data.y = y
     mock_data.obs_se = sigma
+    mock_data.sigma2 = sigma**2
 
     return mock_data, X, Z_u, Z_v, beta_true, gamma_true, eta_true, u_true, v_true
 

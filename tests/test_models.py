@@ -30,6 +30,7 @@ def lme_inputs():
     mock_data.obs = y 
     mock_data.y = y 
     mock_data.obs_se = s
+    mock_data.sigma2 = s**2
 
     return mock_data, X, Z, beta_true, gamma_true
 
@@ -81,7 +82,7 @@ def re_inputs():
     mock_data.obs = y
     mock_data.y = y
     mock_data.obs_se = s
-    
+    mock_data.sigma2 = s**2
     return mock_data, Z, u_true, eta 
 
 
