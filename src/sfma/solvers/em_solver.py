@@ -32,13 +32,15 @@ class EMSolver(IterativeSolver):
         self.v_solver.model.gammas = [self.eta_curr] 
         data.y = self.beta_solver.model.forward(self.betas_curr) - data.obs
         self.v_solver.fit(self.vs_curr, data)
-        self.vs_curr = self.v_solver.x_opt
+        vs_mle = self.v_solver.x_opt
 
         # fitting eta
-        sigma2_v = (data.obs_se**2 * self.eta_curr) / (self.eta_curr + data.obs_se**2)
-        vs_cond = self.vs_curr + np.sqrt(sigma2_v * 2 / np.pi)
+        sigma2_v = (data.sigma2 * self.eta_curr) / (self.eta_curr + data.sigma2)
+        self.vs_curr = vs_mle + np.sqrt(sigma2_v * 2 / np.pi)
         sigma2_v_cond = (1 - 2 / np.pi) * sigma2_v
-        self.eta_curr = [np.mean(vs_cond**2 + sigma2_v_cond)]
+        self.eta_curr = [np.mean(self.vs_curr**2 + sigma2_v_cond)]
+
+        data.sigma2 = np.ones(len(data.y)) * np.mean(np.dot(data.y, data.y + self.v_solver.model.forward(self.vs_curr)))
 
         if verbose:
             self.print_x_curr()
