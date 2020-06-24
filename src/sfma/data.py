@@ -30,4 +30,5 @@ class Data:
         self.obs = df[self.data_specs.col_obs].to_numpy()
         self.obs_se = df[self.data_specs.col_obs_se].to_numpy()
         self.y = df[self.data_specs.col_obs].to_numpy()
+        self.sigma2 = df[self.data_specs.col_obs_se].to_numpy()**2
 
