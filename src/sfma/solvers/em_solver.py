@@ -35,10 +35,11 @@ class EMSolver(IterativeSolver):
         vs_mle = self.v_solver.x_opt
 
         # fitting eta
-        sigma2_v = (data.sigma2 * self.eta_curr) / (self.eta_curr + data.sigma2)
+        # sigma2_v = (data.sigma2 * self.eta_curr) / (self.eta_curr + data.sigma2)
+        sigma2_v = 1 / (np.diag(np.dot(self.v_solver.model.Z.T / data.sigma2, self.v_solver.model.Z)) + 1.0/self.v_solver.model.gammas_padded)
         self.vs_curr = vs_mle + np.sqrt(sigma2_v * 2 / np.pi)
-        sigma2_v_cond = (1 - 2 / np.pi) * sigma2_v
-        self.eta_curr = [np.mean(self.vs_curr**2 + sigma2_v_cond)]
+        sigma2_v_expect = (1 - 2 / np.pi) * sigma2_v
+        self.eta_curr = [np.mean(self.vs_curr**2 + sigma2_v_expect)]
 
         data.sigma2 = np.ones(len(data.y)) * np.mean(np.dot(data.y, data.y - self.v_solver.model.forward(self.vs_curr)))
 
