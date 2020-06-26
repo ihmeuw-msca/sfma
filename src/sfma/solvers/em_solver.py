@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Dict, Optional
 from copy import deepcopy
+import scipy
 
 from anml.solvers.interface import Solver
 from anml.solvers.base import IPOPTSolver, ClosedFormSolver
@@ -32,13 +33,21 @@ class EMSolver(IterativeSolver):
         self.v_solver.model.gammas = [self.eta_curr] 
         data.y = self.beta_solver.model.forward(self.betas_curr) - data.obs
         self.v_solver.fit(self.vs_curr, data)
-        vs_mle = self.v_solver.x_opt
+        mu_v = self.v_solver.x_opt
 
-        # fitting eta
+        # mu_v = self.eta_curr * data.y / (self.eta_curr + data.sigma2)
         # sigma2_v = (data.sigma2 * self.eta_curr) / (self.eta_curr + data.sigma2)
+        
+        # fitting eta
+        # note: computation for expectations follow from 
+        # https://en.wikipedia.org/wiki/Truncated_normal_distribution
         sigma2_v = 1 / (np.diag(np.dot(self.v_solver.model.Z.T / data.sigma2, self.v_solver.model.Z)) + 1.0/self.v_solver.model.gammas_padded)
-        self.vs_curr = vs_mle + np.sqrt(sigma2_v * 2 / np.pi)
-        sigma2_v_expect = (1 - 2 / np.pi) * sigma2_v
+        alpha = -mu_v / np.sqrt(sigma2_v)
+        phi_alpha = 1/np.sqrt(2*np.pi) * np.exp(- alpha**2 / 2)
+        Phi_alpha = (1 + scipy.special.erf(alpha / np.sqrt(2))) / 2
+        z = 1 - Phi_alpha
+        self.vs_curr = mu_v + phi_alpha * np.sqrt(sigma2_v) / z
+        sigma2_v_expect = (1 + alpha * phi_alpha / z - (phi_alpha / z)**2) * sigma2_v
         self.eta_curr = [np.mean(self.vs_curr**2 + sigma2_v_expect)]
 
         data.sigma2 = np.ones(len(data.y)) * np.mean(np.dot(data.y, data.y - self.v_solver.model.forward(self.vs_curr)))
