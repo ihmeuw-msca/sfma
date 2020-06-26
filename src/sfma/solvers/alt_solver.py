@@ -44,7 +44,7 @@ class AlternatingSolver(IterativeSolver):
         self.vs_curr = self.v_solver.x_opt
 
         # fitting eta
-        self.eta_curr = [np.mean(self.vs_curr**2)]
+        self.eta_curr = [np.dot(self.v_solver.model.D.T, self.vs_curr**2) / np.sum(self.v_solver.model.D, axis=0)]
 
         if verbose:
             self.print_x_curr()
