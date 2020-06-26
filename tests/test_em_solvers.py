@@ -65,5 +65,5 @@ def test_alternating_solver(sfa_inputs):
     em_solver.step(data, verbose=False)
     assert np.linalg.norm(em_solver.vs_curr - v_true)/ np.linalg.norm(v_true) < 5e-2
 
-    # # test fit
-    # alt_solver.fit(x_init=[beta_init, gamma_init, u_init, v_init, eta_init], data=data, verbose=False, set_params=False, options=dict(maxiter=2))
+    # test fit
+    em_solver.fit(x_init=[beta_init, v_init, eta_init], data=data, verbose=False, set_params=False, options=dict(maxiter=2))
