@@ -50,7 +50,11 @@ class EMSolver(IterativeSolver):
         sigma2_v_expect = (1 + alpha * phi_alpha / z - (phi_alpha / z)**2) * sigma2_v
         self.eta_curr = [np.mean(self.vs_curr**2 + sigma2_v_expect)]
 
-        data.sigma2 = np.ones(len(data.y)) * np.mean(np.dot(data.y, data.y - self.v_solver.model.forward(self.vs_curr)))
+        data.sigma2 = (
+            np.sum(data.y**2) + 
+            np.sum(np.diag(np.dot(self.v_solver.model.Z.T, self.v_solver.model.Z)) * (self.vs_curr**2 + sigma2_v_expect)) -
+            2 * np.dot(data.y, np.dot(self.v_solver.model.Z, self.vs_curr))
+        ) / len(data.y)
 
         if verbose:
             self.print_x_curr()
