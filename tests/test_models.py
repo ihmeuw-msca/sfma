@@ -4,10 +4,10 @@ import pytest
 
 from anml.parameter.variables import Variable
 from anml.parameter.parameter import ParameterSet
-from anml.parameter.prior import GaussianPrior
-from anml.solvers.base import ScipyOpt, ClosedFormSolver
+from anml.parameter.prior import GaussianPrior, Prior
+from anml.solvers.base import ScipyOpt, ClosedFormSolver, IPOPTSolver
 
-from sfma.models.marginal import LinearMarginal
+from sfma.models.marginal import BetaGammaModel, BetaGammaSigmaModel
 from sfma.models.maximal import UModel
 
 
@@ -19,8 +19,8 @@ def lme_inputs():
     gamma_true = np.random.rand(n_gamma)*0.09 + 0.01
     X = np.random.randn(n_data, n_beta)
     Z = np.random.randn(n_data, n_gamma)
-    s = np.random.rand(n_data)*0.09 + 0.01
-    V = s**2
+    s = 0.05
+    V = s**2 * np.ones(n_data)
     D = np.diag(V) + (Z*gamma_true).dot(Z.T)
     u = np.random.multivariate_normal(np.zeros(n_data), D)
     y = X.dot(beta_true) + u
@@ -29,8 +29,8 @@ def lme_inputs():
     mock_data = Mock()
     mock_data.obs = y 
     mock_data.y = y 
-    mock_data.obs_se = s
-    mock_data.sigma2 = s**2
+    mock_data.obs_se = s * np.ones(n_data)
+    mock_data.sigma2 = s**2 * np.ones(n_data)
 
     return mock_data, X, Z, beta_true, gamma_true
 
@@ -60,11 +60,18 @@ def test_lme_marginal(lme_inputs):
         param_set.fe_priors = []
         param_set.re_var_priors = []
         
-        model = LinearMarginal(param_set)
+        model = BetaGammaModel(param_set)
         solver = ScipyOpt(model)
         x_init = np.random.rand(len(beta_true) + len(gamma_true))
         solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
-        np.testing.assert_allclose(solver.x_opt[:len(beta_true)], beta_true, rtol=5e-2)
+        assert np.linalg.norm(solver.x_opt[:len(beta_true)] - beta_true) / np.linalg.norm(beta_true) < 2e-2
+
+        model2 = BetaGammaSigmaModel(param_set, sigma2_prior=Prior(lower_bound=[0.0], upper_bound=[10.]))
+        solver2 = IPOPTSolver(model2)
+        x_init2 = np.random.rand(len(beta_true) + len(gamma_true) + 1)
+        solver2.fit(x_init2, data, options=dict(solver_options=dict(maxiter=200)))
+        assert np.linalg.norm(solver2.x_opt[:len(beta_true)] - beta_true) / np.linalg.norm(beta_true) < 2e-2
+
 
 
 @pytest.fixture

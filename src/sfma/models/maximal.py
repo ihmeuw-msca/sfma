@@ -22,9 +22,7 @@ class LinearMaximal(LinearModel):
 
 class BetaModel(LinearMaximal):
 
-    def init_model(self):
-        self.x_dim = self._param_set.num_fe
-        
+    def init_model(self):        
         self.X = self._param_set.design_matrix_fe
         self.lb = self._param_set.lb_fe
         self.ub = self._param_set.ub_fe
@@ -33,6 +31,10 @@ class BetaModel(LinearMaximal):
             (self._param_set.constr_matrix_fe, self._param_set.constr_lb_fe, self._param_set.constr_ub_fe)
         ])
         self.prior_fun = collect_priors(self._param_set.fe_priors)
+
+    @property
+    def x_dim(self):
+        return self._param_set.num_fe
 
     @property
     def design_matrix(self):
@@ -54,7 +56,6 @@ class UModel(LinearMaximal):
                 raise TypeError('Only Gaussian priors allowed.')
 
     def init_model(self):
-        self.x_dim = self._param_set.num_re
         self.Z = self._param_set.design_matrix_re
         self.D = self._param_set.re_var_padding
         self.lb = self._param_set.lb_re
@@ -65,6 +66,10 @@ class UModel(LinearMaximal):
         ])
         self.gammas_padded = np.array([prior.std[0] for prior in self._param_set.re_priors])
         self._gammas = None
+
+    @property 
+    def x_dim(self):
+        return self._param_set.num_re
 
     @property
     def gammas(self):
