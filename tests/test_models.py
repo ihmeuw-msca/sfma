@@ -19,8 +19,8 @@ def lme_inputs():
     gamma_true = np.random.rand(n_gamma)*0.09 + 0.01
     X = np.random.randn(n_data, n_beta)
     Z = np.random.randn(n_data, n_gamma)
-    s = 0.05
-    V = s**2 * np.ones(n_data)
+    s_true = 0.05
+    V = s_true**2 * np.ones(n_data)
     D = np.diag(V) + (Z*gamma_true).dot(Z.T)
     u = np.random.multivariate_normal(np.zeros(n_data), D)
     y = X.dot(beta_true) + u
@@ -29,14 +29,14 @@ def lme_inputs():
     mock_data = Mock()
     mock_data.obs = y 
     mock_data.y = y 
-    mock_data.obs_se = s * np.ones(n_data)
-    mock_data.sigma2 = s**2 * np.ones(n_data)
+    mock_data.obs_se = s_true * np.ones(n_data)
+    mock_data.sigma2 = s_true**2 * np.ones(n_data)
 
-    return mock_data, X, Z, beta_true, gamma_true
+    return mock_data, X, Z, beta_true, gamma_true, s_true
 
 
 def test_lme_marginal(lme_inputs):
-    data, X, Z, beta_true, gamma_true = lme_inputs
+    data, X, Z, beta_true, gamma_true, s_true = lme_inputs
     n_beta, n_gamma = len(beta_true), len(gamma_true)
     # mock parameter set
     with patch.object(ParameterSet, '__init__', lambda x: None):
@@ -71,7 +71,6 @@ def test_lme_marginal(lme_inputs):
         x_init2 = np.random.rand(len(beta_true) + len(gamma_true) + 1)
         solver2.fit(x_init2, data, options=dict(solver_options=dict(maxiter=200)))
         assert np.linalg.norm(solver2.x_opt[:len(beta_true)] - beta_true) / np.linalg.norm(beta_true) < 2e-2
-
 
 
 @pytest.fixture
