@@ -10,7 +10,6 @@ from typing import List, Union
 from dataclasses import dataclass
 from copy import deepcopy
 
-from anml.parameter.parameter import ParameterSet
 from anml.parameter.variables import Variable
 
 
@@ -23,9 +22,8 @@ class DataSpecs:
 
 class Data:
 
-    def __init__(self, data_specs: DataSpecs, params: List[ParameterSet] = None):
+    def __init__(self, data_specs: DataSpecs):
         self.data_specs = data_specs
-        self.params = params
     
     def process(self, df: pd.DataFrame):
         self.obs = df[self.data_specs.col_obs].to_numpy()
