@@ -66,12 +66,6 @@ def test_lme_marginal(lme_inputs):
         solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
         assert np.linalg.norm(solver.x_opt[:len(beta_true)] - beta_true) / np.linalg.norm(beta_true) < 2e-2
 
-        model2 = BetaGammaSigmaModel(param_set, sigma2_prior=Prior(lower_bound=[0.0], upper_bound=[10.]))
-        solver2 = IPOPTSolver(model2)
-        x_init2 = np.random.rand(len(beta_true) + len(gamma_true) + 1)
-        solver2.fit(x_init2, data, options=dict(solver_options=dict(maxiter=200)))
-        assert np.linalg.norm(solver2.x_opt[:len(beta_true)] - beta_true) / np.linalg.norm(beta_true) < 2e-2
-
 
 @pytest.fixture
 def re_inputs():

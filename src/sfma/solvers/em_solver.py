@@ -10,7 +10,7 @@ from sfma.data import Data
 from sfma.models.marginal import LinearMarginal
 from sfma.models.maximal import UModel, VModel
 from sfma.solvers.base import IterativeSolver
-from sfma.solvers.alt_solver import BlockSolver
+from sfma.solvers.block_solver import BlockSolver
 
 
 class EMSolver(BlockSolver):

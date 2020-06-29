@@ -57,13 +57,10 @@ def test_alternating_solver(sfa_inputs):
     v_init = np.random.rand(len(v_true))
     eta_init = [np.random.rand()]
 
-    em_solver.x_curr = [beta_init, v_true, eta_true]
-    em_solver.step(data, verbose=False)
-    assert np.linalg.norm(em_solver.betas_curr - beta_true)/ np.linalg.norm(beta_true) < 2e-2
-
     em_solver.x_curr = [beta_true, v_init, eta_true]
-    em_solver.step(data, verbose=False)
-    assert np.linalg.norm(em_solver.vs_curr - v_true)/ np.linalg.norm(v_true) < 5e-2
+    em_solver.beta_solver.x_opt = beta_true
+    em_solver.v_step(data)
+    assert np.linalg.norm(em_solver.x_curr[1] - v_true)/ np.linalg.norm(v_true) < 5e-2
 
     # test fit
-    em_solver.fit(x_init=[beta_init, v_init, eta_init], data=data, verbose=False, set_params=False, options=dict(maxiter=2))
+    em_solver.fit(x_init=[beta_init, v_init, eta_init], data=data, verbose=False, options=dict(maxiter=2))
