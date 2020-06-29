@@ -15,32 +15,14 @@ class IterativeSolver(CompositeSolver):
 
     def reset(self):
         self.data = None
-
-    def _set_params(self):
-        assert len(self.data.params) == len(self.solvers)
-        for param_set, solver in zip(self.data.params, self.solvers):
-            solver.model.param_set = param_set
     
     def step(self, data, verbose=True):
         raise NotImplementedError()
 
-    @property
-    def x_curr(self):
-        raise NotImplementedError()
-
-    @x_curr.setter
-    def x_curr(self, x):
-        raise NotImplementedError()
-
-    def fit(self, x_init: List[np.ndarray], data: Data, set_params: bool = True, verbose=True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
+    def fit(self, x_init: List[np.ndarray], data: Data, verbose=True, options: Optional[Dict[str, str]] = dict(maxiter=100, tol=1e-5)):
         self.x_curr = x_init 
-        
         data.y = deepcopy(data.obs)
         data.sigma2 = deepcopy(data.obs_se**2)
-        
-        if set_params:
-            self._set_params()
-        
         self.errors_hist = []
         itr = 0
         while itr < options['maxiter']:
@@ -60,5 +42,6 @@ class IterativeSolver(CompositeSolver):
     
     def error(self, data, x = None):
         if x is None:
-            x = self.x_curr
-        return np.mean((data.obs - self.forward(x))**2 / data.obs_se**2)
+            return np.mean((data.obs - self.predict())**2 / data.obs_se**2)
+        else:
+            return np.mean((data.obs - self.forward(x))**2 / data.obs_se**2)
