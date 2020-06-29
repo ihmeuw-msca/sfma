@@ -90,7 +90,6 @@ class BetaGammaSigmaModel(LinearMarginal):
         betas = x[:self.n_betas]
         gammas = x[self.n_betas:self.n_betas + self.n_gammas]
         sigma2 = np.ones(len(data.y)) * x[-1]
-        import pdb; pdb.set_trace()
 
         return self._loss(betas, gammas, sigma2, data.y) + self.prior_fun(x)
 
