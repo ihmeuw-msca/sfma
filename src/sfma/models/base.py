@@ -38,8 +38,3 @@ class LinearModel(Model):
     def param_set(self, param_set_processed: pd.DataFrame):
         self._param_set = param_set_processed
         self.init_model()
-
-    @property
-    def x_dim(self):
-        raise NotImplementedError()
-

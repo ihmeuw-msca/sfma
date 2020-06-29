@@ -42,12 +42,9 @@ class LinearMarginal(LinearModel):
 
 class BetaGammaModel(LinearMarginal):
 
-    @property
-    def x_dim(self):
-        return self.n_betas + self.n_gammas
-
     def init_model(self):
         super().init_model()
+        self.x_dim = self.n_betas + self.n_gammas
         self.lb = np.hstack((self._param_set.lb_fe, self._param_set.lb_re_var))
         self.ub = np.hstack((self._param_set.ub_fe, self._param_set.ub_re_var)) 
         
@@ -76,6 +73,7 @@ class BetaGammaSigmaModel(LinearMarginal):
 
     def init_model(self):
         super().init_model()
+        self.x_dim = self.n_betas + self.n_gammas + 1
         self.lb = np.hstack((self._param_set.lb_fe, self._param_set.lb_re_var, self.sigma2_prior.lower_bound))
         self.ub = np.hstack((self._param_set.ub_fe, self._param_set.ub_re_var, self.sigma2_prior.upper_bound)) 
         
@@ -86,16 +84,13 @@ class BetaGammaSigmaModel(LinearMarginal):
         if self.C is not None:
             self.C = np.hstack((self.C, np.zeros((len(self.C), 1))))
         self.prior_fun = collect_priors(self._param_set.fe_priors + self._param_set.re_var_priors + [self.sigma2_prior]) 
-    
-    @property
-    def x_dim(self):
-        return self.n_betas + self.n_gammas + 1
 
     def objective(self, x, data: Data):
         self._prerun_check(x)
         betas = x[:self.n_betas]
         gammas = x[self.n_betas:self.n_betas + self.n_gammas]
         sigma2 = np.ones(len(data.y)) * x[-1]
+        import pdb; pdb.set_trace()
 
         return self._loss(betas, gammas, sigma2, data.y) + self.prior_fun(x)
 
