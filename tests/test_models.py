@@ -7,64 +7,8 @@ from anml.parameter.parameter import ParameterSet
 from anml.parameter.prior import GaussianPrior, Prior
 from anml.solvers.base import ScipyOpt, ClosedFormSolver, IPOPTSolver
 
-from sfma.models.marginal import BetaGammaModel, BetaGammaSigmaModel, SimpleBetaGammaEtaModel
+from sfma.models.marginal import SimpleBetaGammaEtaModel
 from sfma.models.maximal import UModel
-
-
-@pytest.fixture
-def lme_inputs():
-    np.random.seed(16)
-    n_data, n_beta, n_gamma = 50, 3, 2
-    beta_true = np.random.randn(n_beta)
-    gamma_true = np.random.rand(n_gamma)*0.09 + 0.01
-    X = np.random.randn(n_data, n_beta)
-    Z = np.random.randn(n_data, n_gamma)
-    s_true = 0.05
-    V = s_true**2 * np.ones(n_data)
-    D = np.diag(V) + (Z*gamma_true).dot(Z.T)
-    u = np.random.multivariate_normal(np.zeros(n_data), D)
-    y = X.dot(beta_true) + u
-
-    # mock data 
-    mock_data = Mock()
-    mock_data.obs = y 
-    mock_data.y = y 
-    mock_data.obs_se = s_true * np.ones(n_data)
-    mock_data.sigma2 = s_true**2 * np.ones(n_data)
-
-    return mock_data, X, Z, beta_true, gamma_true, s_true
-
-
-def test_beta_gamma_model(lme_inputs):
-    data, X, Z, beta_true, gamma_true, s_true = lme_inputs
-    n_beta, n_gamma = len(beta_true), len(gamma_true)
-    # mock parameter set
-    with patch.object(ParameterSet, '__init__', lambda x: None):
-        param_set = ParameterSet()
-        param_set.reset()
-        param_set.num_fe = n_beta
-        param_set.num_re_var = n_gamma
-        param_set.design_matrix_fe = X
-        param_set.design_matrix_re = Z
-        param_set.re_var_padding = np.identity(n_gamma)
-        param_set.lb_fe = [-10.0] * n_beta
-        param_set.ub_fe = [10.0] * n_beta
-        param_set.lb_re_var = [0.0] * n_gamma
-        param_set.ub_re_var = [10.0] * n_gamma
-        param_set.constr_matrix_fe = np.zeros((1, n_beta))
-        param_set.constr_lb_fe = [0.0]
-        param_set.constr_ub_fe = [0.0]
-        param_set.constr_matrix_re_var = np.zeros((1, n_gamma))
-        param_set.constr_lb_re_var = [0.0]
-        param_set.constr_ub_re_var = [0.0]
-        param_set.fe_priors = []
-        param_set.re_var_priors = []
-        
-        model = BetaGammaModel(param_set)
-        solver = ScipyOpt(model)
-        x_init = np.random.rand(len(beta_true) + len(gamma_true))
-        solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
-        assert np.linalg.norm(solver.x_opt[:len(beta_true)] - beta_true) / np.linalg.norm(beta_true) < 2e-2
 
 
 @pytest.fixture
