@@ -50,7 +50,7 @@ class UModel(LinearMaximal):
         super().__init__(param_set_processed)
         if param_set_processed is not None:
             if not all([isinstance(prior, GaussianPrior) for prior in param_set_processed.re_priors]):
-                raise TypeError('Only Gaussian priors allowed.')
+                raise TypeError('Only Gaussian type priors allowed.')
 
     def init_model(self):
         self.x_dim = self._param_set.num_re
