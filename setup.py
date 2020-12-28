@@ -15,5 +15,6 @@ setup(name='sfma',
                         'pytest',
                         'ipopt',
                         'limetr',
-                        'xspline'],
+                        'xspline',
+                        'anml'],
       zip_safe=False)
