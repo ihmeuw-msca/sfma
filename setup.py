@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(name='sfma',
       version='0.0.0',
@@ -7,13 +7,14 @@ setup(name='sfma',
       author='Marlena Bannick, Peng Zheng',
       author_email='mnorwood@uw.edu, zhengp@uw.edu',
       license='MIT',
-      packages=['sfma'],
       package_dir={'': 'src'},
+      packages=find_packages(where='src'),
       install_requires=['numpy',
                         'scipy',
                         'pandas',
                         'pytest',
                         'ipopt',
                         'limetr',
-                        'xspline'],
+                        'xspline',
+                        'anml'],
       zip_safe=False)
