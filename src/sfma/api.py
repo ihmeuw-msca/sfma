@@ -9,8 +9,8 @@ from anml.parameter.variables import Intercept
 from sfma.data import DataSpecs
 from sfma.data import Data
 from sfma.models.maximal import VModel, UModel
-from sfma.models.marginal import SimpleBetaEtaModel
-from anml.solvers.base import ClosedFormSolver, ScipyOpt, IPOPTSolver
+from sfma.models.marginal import SimpleBetaEtaModel, SimpleBetaGammaEtaModel
+from anml.solvers.base import ClosedFormSolver, ScipyOpt
 from sfma.solver import SimpleSolver
 
 
@@ -29,7 +29,8 @@ class SFMAModel:
                  knots_degree: int = 3,
                  r_linear: bool = False,
                  l_linear: bool = False,
-                 include_intercept: bool = True):
+                 include_intercept: bool = True,
+                 include_gamma: bool = False):
 
         self.col_output = col_output
         self.col_se = col_se
@@ -44,6 +45,7 @@ class SFMAModel:
         self.r_linear = r_linear
         self.l_linear = l_linear
         self.include_intercept = include_intercept
+        self.include_gamma = include_gamma
 
         data = df.copy().reset_index(drop=True)
         data['group'] = data.index
@@ -75,6 +77,8 @@ class SFMAModel:
             )
 
         # Create the spline variable for the input
+        if self.include_gamma:
+            self.include_intercept = False
         spline = Spline(
             covariate=self.col_input,
             knots_type=self.knots_type,
@@ -83,8 +87,18 @@ class SFMAModel:
             r_linear=self.r_linear,
             l_linear=self.l_linear,
             derivative_constr=derivative_constraints,
-            include_intercept=include_intercept
+            include_intercept=self.include_intercept
         )
+        variables = [spline]
+        if self.include_gamma:
+            spline_intercept = Intercept(
+                add_re=True, col_group='group',
+                re_prior=GaussianPrior(
+                    lower_bound=[-np.inf],
+                    upper_bound=[np.inf]
+                )
+            )
+            variables = [spline_intercept] + variables
 
         # Create the parameter set to solve
         # the marginal likelihood problem
@@ -92,7 +106,7 @@ class SFMAModel:
             parameters=[
                 Parameter(
                     param_name='beta',
-                    variables=[spline]
+                    variables=variables
                 )
             ]
         )
@@ -122,22 +136,25 @@ class SFMAModel:
         self.data.process(data)
 
         # Build the two models
-        self.marginal_model = SimpleBetaEtaModel(param_set_marginal)
+        if self.include_gamma:
+            self.marginal_model = SimpleBetaGammaEtaModel(param_set_marginal)
+        else:
+            self.marginal_model = SimpleBetaEtaModel(param_set_marginal)
         self.v_model = VModel(param_set_v)
 
         # Create the solvers for the models
-        marginal_solver = IPOPTSolver(self.marginal_model)
+        marginal_solver = ScipyOpt(self.marginal_model)
         v_solver = ClosedFormSolver(self.v_model)
         self.solver = SimpleSolver([marginal_solver, v_solver])
 
         # Randomly initialize parameter values
-        self.x_init = np.random.randn(marginal_solver.model.x_dim)
+        self.x_init = np.zeros(marginal_solver.model.x_dim)
 
         # Placeholder for inefficiencies
         self.inefficiencies = np.zeros(len(data))
 
-    def fit(self):
-        self.solver.fit(x_init=self.x_init, data=self.data)
+    def fit(self, **kwargs):
+        self.solver.fit(x_init=self.x_init, data=self.data, **kwargs)
         self.inefficiencies = self.solver.solvers[1].x_opt
 
     def predict(self):

@@ -1,12 +1,12 @@
 import numpy as np
 
 from anml.solvers.interface import Solver, CompositeSolver
-from anml.solvers.base import IPOPTSolver
+from anml.solvers.base import ScipyOpt
 
 
 class SimpleSolver(CompositeSolver):
 
-    def fit(self, x_init, data, options=dict(solver_options=dict(max_iter=200))):
+    def fit(self, x_init, data, options=dict(solver_options=dict())):
         self.solvers[0].fit(x_init, data, options)
         if len(self.solvers) >= 2:
             # compute vs
