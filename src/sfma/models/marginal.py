@@ -9,6 +9,7 @@ from anml.parameter.utils import collect_priors
 from sfma.data import Data
 from sfma.models.base import LinearModel
 from sfma.models.utils import build_linear_constraint
+from sfa_utils.npufunc import log_erfc
 
 
 class MarginalModel(LinearModel):
@@ -26,10 +27,11 @@ class MarginalModel(LinearModel):
 
     def _loss(self, betas, gamma, eta, data):
         r = data.y - self.X.dot(betas)
+        eta = np.sqrt(eta**2)
         V = gamma + eta + data.sigma2
         z = np.sqrt(eta) * r / np.sqrt(2 * V * (gamma + data.sigma2))
-        Phi = scipy.special.erfc(z)
-        return np.mean(r**2 / (2 * V) + 0.5 * np.log(V) - np.log(Phi))
+        logPhi = log_erfc(z)
+        return np.mean(r**2 / (2 * V) + 0.5 * np.log(V) - logPhi)
 
     def forward(self, x, X=None):
         return super().forward(x[:self.n_betas], X)

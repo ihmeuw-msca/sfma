@@ -84,6 +84,8 @@ class UModel(LinearMaximal):
         return self._prior_fun 
 
     def closed_form_soln(self, data: Data):
+        # TODO: Add cases for when all of the gammas padded are 0
+        #  from Sasha's write-up
         sigma2 = data.sigma2
         return np.linalg.solve(
             np.dot(self.Z.T / sigma2, self.Z) + np.diag(1.0/self.gammas_padded), 
