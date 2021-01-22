@@ -26,7 +26,6 @@ class MarginalModel(LinearModel):
         return self.X
 
     def _loss(self, betas, gamma, eta, data):
-        # import pdb; pdb.set_trace()
         r = data.y - self.X.dot(betas)
         eta = np.sqrt(eta**2)
         V = gamma + eta + data.sigma2
