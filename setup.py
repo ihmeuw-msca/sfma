@@ -1,4 +1,21 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages
+from numpy.distutils.core import setup
+from numpy.distutils.misc_util import Configuration
+from numpy.distutils.misc_util import get_info
+
+
+def configuration(parent_package='', top_path=''):
+    info = get_info('npymath')
+
+    config = Configuration('sfa_utils',
+                            parent_package,
+                            top_path)
+    config.add_extension('npufunc',
+                            ['src/sfma/log_erfc.c'],
+                            extra_info=info)
+
+    return config
+
 
 setup(name='sfma',
       version='0.0.0',
@@ -17,4 +34,5 @@ setup(name='sfma',
                         'limetr',
                         'xspline',
                         'anml'],
-      zip_safe=False)
+      zip_safe=False,
+      configuration=configuration)
