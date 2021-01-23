@@ -72,7 +72,7 @@ class MarginalModel(Model):
     def get_vars(self, x: ndarray) -> Tuple[ndarray]:
         variables = np.split(x, np.cumsum([self.var_sizes])[:-1])
         beta = variables[0]
-        gamma = variables[1]
+        gamma = np.sqrt(variables[1]**2)
         eta = np.sqrt(variables[2]**2)
         return beta, gamma, eta
 
