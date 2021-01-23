@@ -1,17 +1,15 @@
 import numpy as np
 import pandas as pd
 
-from anml.parameter.parameter import Parameter, ParameterSet
-from anml.parameter.prior import GaussianPrior, Prior
+from anml.parameter.parameter import Parameter
+from anml.parameter.prior import Prior
 from anml.parameter.processors import process_all
 from anml.parameter.spline_variable import Spline, SplineLinearConstr
 from anml.parameter.variables import Intercept
 from sfma.data import DataSpecs
 from sfma.data import Data
-from sfma.models.maximal import VModel, UModel
-from sfma.models.marginal import SimpleBetaEtaModel, SimpleBetaGammaEtaModel
-from anml.solvers.base import ClosedFormSolver, ScipyOpt
-from sfma.solver import SimpleSolver
+from sfma.models.marginal import MarginalModel
+from anml.solvers.base import ScipyOpt
 
 
 class SFMAModel:
@@ -77,101 +75,67 @@ class SFMAModel:
             )
 
         # Create the spline variable for the input
-        if self.include_gamma:
-            self.include_intercept = False
-        spline = Spline(
-            covariate=self.col_input,
-            knots_type=self.knots_type,
-            knots_num=self.knots_num,
-            degree=self.knots_degree,
-            r_linear=self.r_linear,
-            l_linear=self.l_linear,
-            derivative_constr=derivative_constraints,
-            include_intercept=self.include_intercept
-        )
-        variables = [spline]
-        if self.include_gamma:
-            spline_intercept = Intercept(
-                add_re=True, col_group='group',
-                re_prior=GaussianPrior(
-                    lower_bound=[-np.inf],
-                    upper_bound=[np.inf]
-                )
+        params = [
+            Parameter(
+                param_name="beta",
+                variables=[
+                    Spline(
+                        covariate=self.col_input,
+                        knots_type=self.knots_type,
+                        knots_num=self.knots_num,
+                        degree=self.knots_degree,
+                        r_linear=self.r_linear,
+                        l_linear=self.l_linear,
+                        derivative_constr=derivative_constraints,
+                        include_intercept=True
+                    )
+                ]
+            ),
+            Parameter(
+                param_name="gamma",
+                variables=[
+                    Intercept(
+                        fe_prior=Prior(
+                            lower_bound=[0.0],
+                            upper_bound=[np.inf if self.include_gamma else 0.0]
+                        )
+                    )
+                ]
+            ),
+            Parameter(
+                param_name="eta",
+                variables=[
+                    Intercept(
+                        fe_prior=Prior(lower_bound=[0.0], upper_bound=[np.inf])
+                    )
+                ]
             )
-            variables = [spline_intercept] + variables
+        ]
 
         # Create the parameter set to solve
         # the marginal likelihood problem
-        param_set_marginal = ParameterSet(
-            parameters=[
-                Parameter(
-                    param_name='beta',
-                    variables=variables
-                )
-            ]
-        )
-        process_all(param_set_marginal, data)
-
-        # Create the parameter set to solve
-        # for the inefficiencies
-        intercept = Intercept(
-            add_re=True, col_group='group',
-            re_prior=GaussianPrior(
-                lower_bound=[0.0],
-                upper_bound=[np.inf]
-            )
-        )
-        param_set_v = ParameterSet(
-            parameters=[
-                Parameter(
-                    param_name='v',
-                    variables=[intercept]
-                )
-            ]
-        )
-        process_all(param_set_v, data)
+        for param in params:
+            process_all(param, data)
 
         # Process the data set
         self.data = Data(data_specs=self.data_spec)
         self.data.process(data)
 
         # Build the two models
-        if self.include_gamma:
-            self.marginal_model = SimpleBetaGammaEtaModel(param_set_marginal)
-        else:
-            self.marginal_model = SimpleBetaEtaModel(param_set_marginal)
-        self.v_model = VModel(param_set_v)
+        self.marginal_model = MarginalModel(params)
 
         # Create the solvers for the models
-        marginal_solver = ScipyOpt(self.marginal_model)
-        v_solver = ClosedFormSolver(self.v_model)
-        self.solver = SimpleSolver([marginal_solver, v_solver])
+        self.solver = ScipyOpt(self.marginal_model)
 
         # Randomly initialize parameter values
-        self.x_init = np.zeros(marginal_solver.model.x_dim)
+        self.x_init = self.marginal_model.get_var_init(self.data)
 
         # Placeholder for inefficiencies
-        self.inefficiencies = np.zeros(len(data))
+        self.inefficiencies = np.zeros(self.data.num_obs)
 
     def fit(self, **kwargs):
         self.solver.fit(x_init=self.x_init, data=self.data, **kwargs)
-        self.inefficiencies = self.solver.solvers[1].x_opt
+        self.inefficiencies = self.marginal_model.get_ie(self.solver.x_opt, self.data)
 
     def predict(self):
         return self.solver.predict()
-
-    @property
-    def marginal_result(self):
-        return self.solver.solvers[0].info['status_msg']
-
-    @property
-    def v_result(self):
-        return self.solver.solvers[1].info['status_msg']
-
-    @property
-    def inefficiencies(self):
-        return self._inefficiencies
-
-    @inefficiencies.setter
-    def inefficiencies(self, inefficiencies: np.ndarray):
-        self._inefficiencies = inefficiencies
