@@ -7,6 +7,7 @@ from anml.parameter.parameter import Parameter
 
 from sfma.data import Data
 from sfma.models.utils import build_linear_constraint, log_erfc
+from scipy.special import erfc
 
 
 class MarginalModel(Model):
@@ -91,6 +92,52 @@ class MarginalModel(Model):
 
         return np.mean(0.5*r**2/v + 0.5*np.log(v) - log_erfc(z))
 
+    def gradient(self, x: ndarray, data: Data) -> ndarray:
+        """
+        Computes the gradient.
+
+        :param x:
+        :param data:
+        :return:
+        """
+        beta, gamma, eta = self.get_vars(x)
+        r = data.obs - self.femat.dot(beta)
+
+        # Why are we doing this?
+        v_re = np.sum(self.remat ** 2 * gamma, axis=1)
+        v_ie = np.sum(self.iemat ** 2 * eta, axis=1)
+        v_rie = data.obs_var + v_re
+        v = data.obs_var + v_re + v_ie
+
+        z = np.sqrt(v_ie) * r / np.sqrt(2.0 * v * (data.obs_var + v_re))
+        x = self.femat
+
+        grad = np.zeros(beta.size + 2)
+        for i in np.arange(data.obs.shape[0]):
+
+            # Gradient for beta
+            grad[0:beta.size] += -1 * x[i, ] * r[i] / v[i]
+            grad[0:beta.size] += 8/np.sqrt(2*np.pi) * erfc(z[i])**(-1) * z[i] * \
+                                 np.exp(-z[i]**2) * x[i, ] * r[i] / np.sqrt(v_rie[i]) / np.sqrt(v[i])
+
+            # Gradient for gamma
+            grad[beta.size] += -1 * r[i]**2 / 2 * v[i]**(-2)
+            grad[beta.size] += 0.5 / v[i]
+            grad[beta.size] += 2 / np.sqrt(2 * np.pi) / erfc(z[i]) * z[i] * np.exp(-z[i]**2) * r[i] * \
+                               np.sqrt(v_ie[i]) / np.sqrt(v_rie[i]) / np.sqrt(v[i]) * (1/v_rie[i] + 1/v[i])
+
+            # Gradient for eta
+            grad[-1] += -1 * r[i]**2 / 2 / v[i]**2
+            grad[-1] += 0.5 / v[i]
+            grad[-1] += 2 / np.sqrt(2 * np.pi) / erfc(z[i]) * z[i] * np.exp(-z[i]**2) * r[i] / \
+                        np.sqrt(v_ie[i]) / np.sqrt(v[i]) * (v_ie[i] / v[i] - 1)
+
+        # Take the average because the objective
+        # is the mean rather than the sum
+        grad = grad / grad.size
+
+        return grad
+
     # pylint:disable=arguments-differ
     def forward(self, x: ndarray, mat: ndarray = None) -> ndarray:
         mat = self.femat if mat is None else mat
@@ -130,5 +177,6 @@ class MarginalModel(Model):
             (self.femat.T/data.obs_var).dot(data.obs)
         )
         gamma_init = np.zeros(self.revar_size)
-        eta_init = np.zeros(self.ievar_size)
+        # eta_init = np.zeros(self.ievar_size)
+        eta_init = 1e-3
         return np.hstack([beta_init, gamma_init, eta_init])
