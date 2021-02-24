@@ -92,6 +92,23 @@ class MarginalModel(Model):
 
         return np.mean(0.5*r**2/v + 0.5*np.log(v) - log_erfc(z))
 
+    # def gradient_ad(self, x, data):
+    #     """
+    #     This is the complex step gradient, just here for debugging self.gradient.
+    #
+    #     :param x:
+    #     :param data:
+    #     :return:
+    #     """
+    #     step = 1e-16
+    #     x_c = x + 0j
+    #     grad = np.zeros(x.size)
+    #     for i in range(x.size):
+    #         x_c[i] += step * 1j
+    #         grad[i] = self.objective(x_c, data).imag / step
+    #         x_c[i] -= step * 1j
+    #     return grad
+
     def gradient(self, x: ndarray, data: Data) -> ndarray:
         """
         Computes the gradient.
@@ -106,35 +123,35 @@ class MarginalModel(Model):
         # Why are we doing this?
         v_re = np.sum(self.remat ** 2 * gamma, axis=1)
         v_ie = np.sum(self.iemat ** 2 * eta, axis=1)
-        v_rie = data.obs_var + v_re
+        v_roe = data.obs_var + v_re
         v = data.obs_var + v_re + v_ie
 
         z = np.sqrt(v_ie) * r / np.sqrt(2.0 * v * (data.obs_var + v_re))
         x = self.femat
 
+        # Derivative of log erfc
+        dlerf = -(1 / erfc(z)) * 2 / np.sqrt(np.pi) * np.exp(-z**2)
         grad = np.zeros(beta.size + 2)
-        for i in np.arange(data.obs.shape[0]):
 
+        for i in np.arange(data.obs.shape[0]):
             # Gradient for beta
             grad[0:beta.size] += -1 * x[i, ] * r[i] / v[i]
-            grad[0:beta.size] += 8/np.sqrt(2*np.pi) * erfc(z[i])**(-1) * z[i] * \
-                                 np.exp(-z[i]**2) * x[i, ] * r[i] / np.sqrt(v_rie[i]) / np.sqrt(v[i])
+            grad[0:beta.size] += -dlerf[i] * -1/np.sqrt(2) * np.sqrt(v_ie[i]) * x[i, ] / np.sqrt(v_roe[i] * v[i])
 
             # Gradient for gamma
             grad[beta.size] += -1 * r[i]**2 / 2 * v[i]**(-2)
             grad[beta.size] += 0.5 / v[i]
-            grad[beta.size] += 2 / np.sqrt(2 * np.pi) / erfc(z[i]) * z[i] * np.exp(-z[i]**2) * r[i] * \
-                               np.sqrt(v_ie[i]) / np.sqrt(v_rie[i]) / np.sqrt(v[i]) * (1/v_rie[i] + 1/v[i])
+            grad[beta.size] += -dlerf[i] * np.sqrt(v_ie[i]) * r[i] / np.sqrt(2) * -1/2 * \
+                               (v_roe[i]**(-3/2) * v[i]**(-1/2) + v_roe[i]**(-1/2) * (v[i]**(-3/2)))
 
             # Gradient for eta
-            grad[-1] += -1 * r[i]**2 / 2 / v[i]**2
+            grad[-1] += -1 * r[i]**2 / 2 * v[i]**(-2)
             grad[-1] += 0.5 / v[i]
-            grad[-1] += 2 / np.sqrt(2 * np.pi) / erfc(z[i]) * z[i] * np.exp(-z[i]**2) * r[i] / \
-                        np.sqrt(v_ie[i]) / np.sqrt(v[i]) * (v_ie[i] / v[i] - 1)
+            grad[-1] += -dlerf[i] * r[i] / np.sqrt(2) * v_roe[i]**(-1/2) * 1/2 / v[i] * (np.sqrt(v[i] / v_ie[i]) - np.sqrt(v_ie[i] / v[i]))
 
         # Take the average because the objective
         # is the mean rather than the sum
-        grad = grad / grad.size
+        grad = grad / data.obs.shape[0]
 
         return grad
 
@@ -176,7 +193,6 @@ class MarginalModel(Model):
             (self.femat.T/data.obs_var).dot(self.femat),
             (self.femat.T/data.obs_var).dot(data.obs)
         )
-        gamma_init = np.zeros(self.revar_size)
-        # eta_init = np.zeros(self.ievar_size)
+        gamma_init = 1e-3
         eta_init = 1e-3
         return np.hstack([beta_init, gamma_init, eta_init])
