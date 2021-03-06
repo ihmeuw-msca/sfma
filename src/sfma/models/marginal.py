@@ -92,23 +92,6 @@ class MarginalModel(Model):
 
         return np.mean(0.5*r**2/v + 0.5*np.log(v) - log_erfc(z))
 
-    # def gradient_ad(self, x, data):
-    #     """
-    #     This is the complex step gradient, just here for debugging self.gradient.
-    #
-    #     :param x:
-    #     :param data:
-    #     :return:
-    #     """
-    #     step = 1e-16
-    #     x_c = x + 0j
-    #     grad = np.zeros(x.size)
-    #     for i in range(x.size):
-    #         x_c[i] += step * 1j
-    #         grad[i] = self.objective(x_c, data).imag / step
-    #         x_c[i] -= step * 1j
-    #     return grad
-
     def gradient(self, x: ndarray, data: Data) -> ndarray:
         """
         Computes the gradient.

@@ -28,7 +28,9 @@ class SFMAModel:
                  r_linear: bool = False,
                  l_linear: bool = False,
                  include_intercept: bool = True,
-                 include_gamma: bool = False):
+                 include_gamma: bool = False,
+                 gamma_init: float = 1e-3,
+                 eta_init: float = 1e-3):
 
         self.col_output = col_output
         self.col_se = col_se
@@ -129,6 +131,8 @@ class SFMAModel:
 
         # Randomly initialize parameter values
         self.x_init = self.marginal_model.get_var_init(self.data)
+        self.x_init[-2] = gamma_init
+        self.x_init[-1] = eta_init
 
         # Placeholder for inefficiencies
         self.inefficiencies = np.zeros(self.data.num_obs)
