@@ -172,10 +172,28 @@ class MarginalModel(Model):
         """
         Compute the initialization of the variable
         """
+        n = len(data.obs)
         beta_init = np.linalg.solve(
             (self.femat.T/data.obs_var).dot(self.femat),
             (self.femat.T/data.obs_var).dot(data.obs)
         )
-        gamma_init = 1e-3
-        eta_init = 1e-3
-        return np.hstack([beta_init, gamma_init, eta_init])
+
+        # Estimate the residuals
+        r = data.obs - self.femat.dot(beta_init)
+
+        # Get the largest residual, this is a crude estimate
+        # for the intercept shift required to go through the data
+        alpha = np.max(r)
+
+        # Calculate the first moment
+        # E[r_i] = E[u_i] + E[v_i] + E[\epsilon_i] + \alpha
+        # This expression is our estimate of \sqrt{2\eta/\pi}
+        eta = (np.mean(r) - alpha) ** 2 * np.pi / 2
+
+        # Calculate the second moment
+        # (\sum E[r_i^2] - \sum \sigma_i**2)/n =
+        #   \gamma + \eta (1 - 2/\pi) + (\alpha + \sqrt{2\eta / \pi})^2
+        moment2 = np.sum(r**2 - data.obs_se) / n
+        gamma = moment2 - eta * (1 - 2 / np.pi) - (alpha + np.sqrt(2 * eta / np.pi)) ** 2
+
+        return np.hstack([beta_init, gamma, eta])
