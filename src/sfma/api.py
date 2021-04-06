@@ -61,7 +61,7 @@ class SFMAModel:
             else:
                 y_bounds = [-np.inf, 0.0]
             derivative_constraints.append(
-                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=20)
+                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=5)
             )
         if self.convex or self.concave:
             if self.convex and self.concave:
@@ -71,7 +71,7 @@ class SFMAModel:
             else:
                 y_bounds = [-np.inf, 0.0]
             derivative_constraints.append(
-                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=20)
+                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=5)
             )
 
         # Create the spline variable for the input

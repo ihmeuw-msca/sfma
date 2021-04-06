@@ -177,6 +177,7 @@ class MarginalModel(Model):
             (self.femat.T/data.obs_var).dot(self.femat),
             (self.femat.T/data.obs_var).dot(data.obs)
         )
+        # beta_init = np.zeros(self.femat.shape[1])
 
         # Estimate the residuals
         r = data.obs - self.femat.dot(beta_init)
@@ -184,6 +185,7 @@ class MarginalModel(Model):
         # Get the largest residual, this is a crude estimate
         # for the intercept shift required to go through the data
         alpha = np.max(r)
+        beta_init += alpha
 
         # Calculate the first moment
         # E[r_i] = E[u_i] + E[v_i] + E[\epsilon_i] + \alpha
@@ -195,5 +197,6 @@ class MarginalModel(Model):
         #   \gamma + \eta (1 - 2/\pi) + (\alpha + \sqrt{2\eta / \pi})^2
         moment2 = np.sum(r**2 - data.obs_se) / n
         gamma = moment2 - eta * (1 - 2 / np.pi) - (alpha + np.sqrt(2 * eta / np.pi)) ** 2
-
+        # gamma = 1e-5
+        # eta = 1e-5
         return np.hstack([beta_init, gamma, eta])
