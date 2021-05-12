@@ -113,24 +113,17 @@ class MarginalModel(Model):
         x = self.femat
 
         # Derivative of log erfc
-        dlerf = -(1 / erfc(z)) * 2 / np.sqrt(np.pi) * np.exp(-z**2)
+        index = z >= 10.0
+        dlerf = np.zeros(z.shape)
+        dlerf[index] = -2 * z[index] - 1 / z[index]
+        dlerf[~index] = -2 * np.exp(-z[~index]**2) / erfc(z[~index]) / np.sqrt(np.pi)
         grad = np.zeros(beta.size + 2)
 
-        for i in np.arange(data.obs.shape[0]):
-            # Gradient for beta
-            grad[0:beta.size] += -1 * x[i, ] * r[i] / v[i]
-            grad[0:beta.size] += -dlerf[i] * -1/np.sqrt(2) * np.sqrt(v_ie[i]) * x[i, ] / np.sqrt(v_roe[i] * v[i])
-
-            # Gradient for gamma
-            grad[beta.size] += -1 * r[i]**2 / 2 * v[i]**(-2)
-            grad[beta.size] += 0.5 / v[i]
-            grad[beta.size] += -dlerf[i] * np.sqrt(v_ie[i]) * r[i] / np.sqrt(2) * -1/2 * \
-                               (v_roe[i]**(-3/2) * v[i]**(-1/2) + v_roe[i]**(-1/2) * (v[i]**(-3/2)))
-
-            # Gradient for eta
-            grad[-1] += -1 * r[i]**2 / 2 * v[i]**(-2)
-            grad[-1] += 0.5 / v[i]
-            grad[-1] += -dlerf[i] * r[i] / np.sqrt(2) * v_roe[i]**(-1/2) * 1/2 / v[i] * (np.sqrt(v[i] / v_ie[i]) - np.sqrt(v_ie[i] / v[i]))
+        grad[:beta.size] += x.T.dot(dlerf*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2) - r/v)
+        grad[beta.size] += 0.5*np.sum(-r**2/v**2 + 1/v + dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
+                                      (1/v_roe + 1/v))
+        grad[-1] += 0.5*np.sum(-r**2/v**2 + 1/v - dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
+                               (1/v_ie - 1/v))
 
         # Take the average because the objective
         # is the mean rather than the sum
