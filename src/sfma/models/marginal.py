@@ -16,6 +16,8 @@ class MarginalModel(TrimmingCompatibleModel):
 
     def __init__(self, params: List[Parameter]):
         super().__init__()
+        self._w = None
+
         if not all([isinstance(param, Parameter) for param in params]):
             raise TypeError("params must be a list of Parameter.")
         param_names = [param.param_name for param in params]
@@ -77,6 +79,14 @@ class MarginalModel(TrimmingCompatibleModel):
         eta = np.sqrt(variables[2]**2)
         return beta, gamma, eta
 
+    @property
+    def w(self):
+        return self._w
+
+    @w.setter
+    def w(self, weights):
+        self._w = weights
+
     # pylint:disable=unbalanced-tuple-unpacking
     def _objective(self, x: ndarray, data: Data) -> ndarray:
         """
@@ -92,17 +102,16 @@ class MarginalModel(TrimmingCompatibleModel):
 
         return 0.5 * r ** 2 / v + 0.5 * np.log(v) - log_erfc(z)
 
-    def objective(self, x: ndarray, data: Data, w: Optional[np.ndarray] = None) -> float:
+    def objective(self, x: ndarray, data: Data) -> float:
         obj = self._objective(x=x, data=data)
-        if w is not None:
-            obj = w.dot(obj)
+        if self.w is not None:
+            obj = self.w.dot(obj)
         return np.mean(obj)
 
     def _gradient(self, x: ndarray, data: Data) -> ndarray:
         beta, gamma, eta = self.get_vars(x)
         r = data.obs - self.femat.dot(beta)
 
-        # Why are we doing this?
         v_re = np.sum(self.remat ** 2 * gamma, axis=1)
         v_ie = np.sum(self.iemat ** 2 * eta, axis=1)
         v_roe = data.obs_var + v_re
@@ -116,17 +125,15 @@ class MarginalModel(TrimmingCompatibleModel):
         dlerf = np.zeros(z.shape)
         dlerf[index] = -2 * z[index] - 1 / z[index]
         dlerf[~index] = -2 * np.exp(-z[~index]**2) / erfc(z[~index]) / np.sqrt(np.pi)
-        grad = np.zeros(beta.size + 2)
+        grad = np.zeros((beta.size + 2, data.obs.shape[0]))
 
-        grad[:beta.size] += x.T.dot(dlerf*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2) - r/v)
-        grad[beta.size] += 0.5*np.sum(-r**2/v**2 + 1/v + dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
-                                      (1/v_roe + 1/v))
-        grad[-1] += 0.5*np.sum(-r**2/v**2 + 1/v - dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
-                               (1/v_ie - 1/v))
+        grad[:beta.size, ] = x.T * (dlerf*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2) - r/v)
+        grad[beta.size, ] = 0.5*(-r**2/v**2 + 1/v + dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*(1/v_roe + 1/v))
+        grad[-1, ] = 0.5*(-r**2/v**2 + 1/v - dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*(1/v_ie - 1/v))
 
         return grad
 
-    def gradient(self, x: ndarray, data: Data, w: Optional[np.ndarray] = None) -> ndarray:
+    def gradient(self, x: ndarray, data: Data) -> ndarray:
         """
         Computes the gradient.
 
@@ -136,8 +143,9 @@ class MarginalModel(TrimmingCompatibleModel):
         :return:
         """
         grad = self._gradient(x=x, data=data)
-        if w is not None:
-            grad = w.dot(grad)
+        if self.w is not None:
+            grad = self.w * grad
+        grad = np.sum(grad, axis=1)
 
         # Take the average because the objective
         # is the mean rather than the sum

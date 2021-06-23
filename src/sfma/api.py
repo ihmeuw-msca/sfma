@@ -10,6 +10,7 @@ from sfma.data import DataSpecs
 from sfma.data import Data
 from sfma.models.marginal import MarginalModel
 from anml.solvers.base import ScipyOpt
+from anml.solvers.composite import TrimmingSolver
 
 
 class SFMAModel:
@@ -28,7 +29,8 @@ class SFMAModel:
                  r_linear: bool = False,
                  l_linear: bool = False,
                  include_intercept: bool = True,
-                 include_gamma: bool = False):
+                 include_gamma: bool = False,
+                 pct_trimming: float = 0.0):
 
         self.col_output = col_output
         self.col_se = col_se
@@ -44,6 +46,10 @@ class SFMAModel:
         self.l_linear = l_linear
         self.include_intercept = include_intercept
         self.include_gamma = include_gamma
+        self.pct_trimming = pct_trimming
+
+        if pct_trimming > 1.0:
+            raise RuntimeError("Need to have pct trimming <= 1.0.")
 
         data = df.copy().reset_index(drop=True)
         data['group'] = data.index
@@ -126,6 +132,7 @@ class SFMAModel:
 
         # Create the solvers for the models
         self.solver = ScipyOpt(self.marginal_model)
+        self.trimming = TrimmingSolver([self.solver])
 
         # Initialize parameter values
         self.x_init = self.marginal_model.get_var_init(self.data)
@@ -134,7 +141,8 @@ class SFMAModel:
         self.inefficiencies = np.zeros(self.data.num_obs)
 
     def fit(self, **kwargs):
-        self.solver.fit(x_init=self.x_init, data=self.data, **kwargs)
+        self.trimming.fit(x_init=self.x_init, data=self.data, n=len(self.data.obs),
+                          pct_trimming=self.pct_trimming, **kwargs)
         self.inefficiencies = self.marginal_model.get_ie(self.solver.x_opt, self.data)
 
     def predict(self):

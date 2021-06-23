@@ -1,119 +1,198 @@
-from mock import patch, Mock, PropertyMock
 import numpy as np
 import pytest
 
-from anml.parameter.variables import Variable
-from anml.parameter.parameter import ParameterSet
-from anml.parameter.prior import GaussianPrior, Prior
-from anml.solvers.base import ScipyOpt, ClosedFormSolver, IPOPTSolver
+import scipy.stats as stats
+from scipy.stats import halfnorm
+from scipy.stats import expon
+import pandas as pd
 
-from sfma.models.marginal import SimpleBetaGammaEtaModel
-from sfma.models.maximal import UModel
+from anml.parameter.parameter import Parameter
+from anml.parameter.prior import Prior
+from anml.parameter.processors import process_all
+from anml.parameter.spline_variable import Spline, SplineLinearConstr
+from anml.parameter.variables import Intercept
+from sfma.data import DataSpecs
+from sfma.data import Data
+
+from sfma.models.marginal import MarginalModel
+from anml.solvers.base import ScipyOpt
+from anml.solvers.composite import TrimmingSolver
+
+
+class Simulator:
+    def __init__(self, nu: int, gamma: float, sigma_min: float, sigma_max: float,
+                 x: callable, func: callable, ineff_dist: str = 'half-normal'):
+        """
+        Simulation class for stochastic frontier meta-analysis.
+
+        nu
+            The scale of the inefficiency term
+        gamma
+            The variance of the random effect term
+        sigma_min, sigma_max
+            The study-specific errors, max and minimum. They will be drawn from a uniform distribution.
+        x
+            A callable function to generate a realization from a random variable x (is the covariate used
+            to construct the frontier). Needs to have an argument size.
+        func
+            A function of x that defines the frontier
+        ineff_dist
+            Inefficiency distribution
+        """
+        self.nu = nu
+        self.gamma = gamma
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+        self.x = x
+        self.func = func
+
+        if ineff_dist == 'half-normal':
+            self.rvs = halfnorm.rvs
+        elif ineff_dist == 'exponential':
+            self.rvs = expon.rvs
+        else:
+            raise RuntimeError("Inefficiency distribution must be half-normal or exponential")
+
+    def simulate(self, n: int = 1, **kwargs):
+        np.random.seed(365)
+        sigma = stats.uniform.rvs(loc=self.sigma_min, scale=self.sigma_max, size=n)
+        epsilon = stats.norm.rvs(loc=0, scale=sigma, size=n)
+
+        us = stats.norm.rvs(loc=0, scale=self.gamma, size=n)
+        vs = self.rvs(scale=self.nu, size=n)
+
+        xs = self.x(size=n, **kwargs)
+        front = self.func(xs)
+        observed = front + us - vs + epsilon
+        return us, vs, epsilon, sigma, xs, front, observed
 
 
 @pytest.fixture
-def re_inputs():
+def settings():
+    return {
+        'col_output': 'output',
+        'col_se': 'se',
+        'col_input': 'input',
+        'knots_num': 3,
+        'knots_type': 'frequency',
+        'knots_degree': 3,
+        'include_gamma': True
+    }
+
+
+@pytest.fixture
+def df(settings):
     np.random.seed(16)
-    n_groups, n_data_per_group, eta = 5, 50, 1.0
-    Z = np.kron(np.identity(n_groups), np.ones((n_data_per_group, 1)))
-    u_true = np.random.randn(n_groups) * eta 
-    s = np.random.rand(n_groups * n_data_per_group)*0.01 + 0.01
-    e = np.random.randn(n_groups * n_data_per_group) * s
-    y = np.dot(Z, u_true) + e
-
-    # mock data
-    mock_data = Mock()
-    mock_data.obs = y
-    mock_data.y = y
-    mock_data.obs_se = s
-    mock_data.sigma2 = s**2
-    return mock_data, Z, u_true, eta 
-
-
-def test_u_model(re_inputs):
-    data, Z, u_true, eta = re_inputs
-    n_groups = len(u_true)
-    with patch.object(ParameterSet, '__init__', lambda x: None):
-        with patch.object(ParameterSet, 'num_re', new_callable=PropertyMock) as mock_num_re:
-            param_set = ParameterSet()
-            param_set.reset()
-            param_set.num_fe = 1
-            mock_num_re.return_value = n_groups
-            param_set.design_matrix_re = Z
-            param_set.constr_matrix_re = np.zeros((1, n_groups))
-            param_set.constr_lb_re = [0.0]
-            param_set.constr_ub_re = [0.0]
-            param_set.lb_re = [-2.0] * n_groups
-            param_set.ub_re = [2.0] * n_groups
-            param_set.re_priors = [GaussianPrior(mean=[0.0], std=[eta])]
-            param_set.re_var_padding = np.ones((n_groups, 1))
-
-            model = UModel(param_set)
-            solver = ScipyOpt(model)
-            x_init = np.random.rand(n_groups)
-            solver.fit(x_init, data, options=dict(solver_options=dict(maxiter=100)))
-            assert np.linalg.norm(solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
-
-            u_model = UModel(param_set)
-            cf_solver = ClosedFormSolver(u_model)
-            cf_solver.fit(x_init, data)
-            assert np.linalg.norm(cf_solver.x_opt - u_true) / np.linalg.norm(u_true) < 2e-2
+    s = Simulator(nu=1, gamma=0.25, sigma_min=0, sigma_max=0.75,
+                  x=lambda size: stats.uniform.rvs(size=size, loc=0.5), func=lambda x: np.log(x) + 10)
+    us, vs, epsilon, sigma, xs, front, observed = s.simulate(n=30)
+    return pd.DataFrame({
+        settings['col_input']: xs,
+        settings['col_output']: observed,
+        settings['col_se']: sigma
+    })
 
 
 @pytest.fixture
-def sfa_inputs():
-    np.random.seed(11)
-    n_data, n_beta = 200, 3
-    beta_true = np.random.randn(n_beta)
-    gamma_true = 0.1
-    eta_true = 0.1
-    X = np.random.randn(n_data, n_beta) * 2
-    Z = np.identity(n_data)
-    s_true = np.random.randn(n_data) * 0.05
-    u = np.random.randn(n_data) * np.sqrt(gamma_true)
-    v = np.maximum(0, np.random.randn(n_data) * np.sqrt(eta_true))
-    y = X.dot(beta_true) + u - v
-
-    # mock data 
-    mock_data = Mock()
-    mock_data.obs = y 
-    mock_data.y = y 
-    mock_data.obs_se = s_true
-    mock_data.sigma2 = s_true**2
-
-    return mock_data, X, Z, beta_true, gamma_true, eta_true
-
-
-def test_beta_gamma_eta_model(sfa_inputs):
-    data, X, Z, beta_true, gamma_true, eta_true = sfa_inputs
-    n_beta = len(beta_true)
-    with patch.object(ParameterSet, '__init__', lambda x: None):
-        param_set = ParameterSet()
-        param_set.reset()
-        param_set.num_fe = n_beta
-        param_set.num_re_var = 1
-        param_set.design_matrix_fe = X
-        param_set.design_matrix_re = Z
-        param_set.lb_fe = [-10.0] * n_beta
-        param_set.ub_fe = [10.0] * n_beta
-        param_set.lb_re_var = [0.0] * 1
-        param_set.ub_re_var = [10.0] * 1
-        param_set.constr_matrix_fe = np.zeros((1, n_beta))
-        param_set.constr_lb_fe = [0.0]
-        param_set.constr_ub_fe = [0.0]
-        param_set.constr_matrix_re_var = np.zeros((1, 1))
-        param_set.constr_lb_re_var = [0.0]
-        param_set.constr_ub_re_var = [0.0]
-        param_set.fe_priors = []
-        param_set.re_var_priors = []
-        
-        model = SimpleBetaGammaEtaModel(param_set)
-        solver = IPOPTSolver(model)
-        x_init = np.random.rand(len(beta_true) + 2)
-        solver.fit(x_init, data, options=dict(solver_options=dict(max_iter=100)))
-        assert np.linalg.norm(solver.x_opt[:n_beta] - beta_true) / np.linalg.norm(beta_true) < 2e-2
-        
-
-        
+def params(settings):
+    params = [
+        Parameter(
+            param_name="beta",
+            variables=[
+                Spline(
+                    covariate=settings['col_input'],
+                    knots_type=settings['knots_type'],
+                    knots_num=settings['knots_num'],
+                    degree=settings['knots_degree'],
+                    include_intercept=True
+                )
+            ]
+        ),
+        Parameter(
+            param_name="gamma",
+            variables=[
+                Intercept(
+                    fe_prior=Prior(
+                        lower_bound=[0.0],
+                        upper_bound=[np.inf if settings['include_gamma'] else 0.0]
+                    )
+                )
+            ]
+        ),
+        Parameter(
+            param_name="eta",
+            variables=[
+                Intercept(
+                    fe_prior=Prior(lower_bound=[0.0], upper_bound=[np.inf])
+                )
+            ]
+        )
+    ]
+    return params
 
 
+def test_model(df, params, settings):
+
+    df2 = df.copy().reset_index(drop=True)
+    df2['group'] = df2.index
+
+    data_spec = DataSpecs(col_obs=settings['col_output'], col_obs_se=settings['col_se'])
+
+    for param in params:
+        process_all(param, df)
+
+    # Process the data set
+    data = Data(data_specs=data_spec)
+    data.process(df)
+
+    marginal_model = MarginalModel(params)
+    solver = ScipyOpt(marginal_model)
+
+    # Initialize parameter values
+    x_init = marginal_model.get_var_init(data)
+    np.random.seed(10)
+    solver.fit(x_init=x_init, data=data, options={'solver_options': {},
+                                                  'tol': 1e-16})
+    inefficiencies = marginal_model.get_ie(solver.x_opt, data)
+    assert solver.x_opt.size == 7
+    assert inefficiencies.size == 30
+    assert all(inefficiencies > 0)
+
+
+def test_model_trimming(df, params, settings):
+
+    df2 = df.copy().reset_index(drop=True)
+    df2['group'] = df2.index
+
+    data_spec = DataSpecs(col_obs=settings['col_output'], col_obs_se=settings['col_se'])
+
+    for param in params:
+        process_all(param, df)
+
+    # Process the data set
+    data = Data(data_specs=data_spec)
+    data.process(df)
+
+    marginal_model = MarginalModel(params)
+    solver = ScipyOpt(marginal_model)
+    trimming = TrimmingSolver([solver])
+
+    # Initialize parameter values
+    x_init = marginal_model.get_var_init(data)
+
+    trimming.fit(x_init=x_init, data=data, options={'solver_options': {},
+                                                    'tol': 1e-16},
+                 n=len(df), pct_trimming=0.0)
+    inefficiencies = marginal_model.get_ie(trimming.solvers[0].x_opt, data)
+    assert trimming.solvers[0].x_opt.size == 7
+    assert inefficiencies.size == 30
+    assert all(inefficiencies > 0)
+
+    solver = ScipyOpt(marginal_model)
+    trimming = TrimmingSolver([solver])
+    trimming.fit(x_init=x_init, data=data, options={'solver_options': {},
+                                                    'tol': 1e-16},
+                 n=len(df), pct_trimming=0.3)
+    inefficiencies = marginal_model.get_ie(trimming.solvers[0].x_opt, data)
+    assert trimming.solvers[0].x_opt.size == 7
+    assert inefficiencies.size == 30
