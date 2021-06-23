@@ -28,9 +28,7 @@ class SFMAModel:
                  r_linear: bool = False,
                  l_linear: bool = False,
                  include_intercept: bool = True,
-                 include_gamma: bool = False,
-                 gamma_init: float = 1e-3,
-                 eta_init: float = 1e-3):
+                 include_gamma: bool = False):
 
         self.col_output = col_output
         self.col_se = col_se
@@ -63,7 +61,7 @@ class SFMAModel:
             else:
                 y_bounds = [-np.inf, 0.0]
             derivative_constraints.append(
-                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=20)
+                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=5)
             )
         if self.convex or self.concave:
             if self.convex and self.concave:
@@ -73,7 +71,7 @@ class SFMAModel:
             else:
                 y_bounds = [-np.inf, 0.0]
             derivative_constraints.append(
-                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=20)
+                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=5)
             )
 
         # Create the spline variable for the input
@@ -129,10 +127,8 @@ class SFMAModel:
         # Create the solvers for the models
         self.solver = ScipyOpt(self.marginal_model)
 
-        # Randomly initialize parameter values
+        # Initialize parameter values
         self.x_init = self.marginal_model.get_var_init(self.data)
-        self.x_init[-2] = gamma_init
-        self.x_init[-1] = eta_init
 
         # Placeholder for inefficiencies
         self.inefficiencies = np.zeros(self.data.num_obs)
