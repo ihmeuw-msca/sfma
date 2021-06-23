@@ -51,7 +51,7 @@ class MarginalModel(TrimmingCompatibleModel):
         return self.params["eta"].num_fe
 
     @property
-    def var_sizes(self) -> int:
+    def var_sizes(self) -> List[int]:
         return [self.fevar_size, self.revar_size, self.ievar_size]
 
     @property
@@ -70,7 +70,7 @@ class MarginalModel(TrimmingCompatibleModel):
     def iemat(self) -> ndarray:
         return self.params["eta"].design_matrix_fe
 
-    def get_vars(self, x: ndarray) -> Tuple[ndarray]:
+    def get_vars(self, x: ndarray) -> Tuple[ndarray, ndarray, ndarray]:
         variables = np.split(x, np.cumsum([self.var_sizes])[:-1])
         beta = variables[0]
         gamma = np.sqrt(variables[1]**2)
@@ -105,31 +105,24 @@ class MarginalModel(TrimmingCompatibleModel):
         # Why are we doing this?
         v_re = np.sum(self.remat ** 2 * gamma, axis=1)
         v_ie = np.sum(self.iemat ** 2 * eta, axis=1)
-        v_rie = data.obs_var + v_re
+        v_roe = data.obs_var + v_re
         v = data.obs_var + v_re + v_ie
 
         z = np.sqrt(v_ie) * r / np.sqrt(2.0 * v * (data.obs_var + v_re))
         x = self.femat
 
-        grad = np.zeros(data.obs.size, beta.size + 2)
+        # Derivative of log erfc
+        index = z >= 10.0
+        dlerf = np.zeros(z.shape)
+        dlerf[index] = -2 * z[index] - 1 / z[index]
+        dlerf[~index] = -2 * np.exp(-z[~index]**2) / erfc(z[~index]) / np.sqrt(np.pi)
+        grad = np.zeros(beta.size + 2)
 
-        for i in np.arange(data.obs.shape[0]):
-            # Gradient for beta
-            grad[i, 0:beta.size] += -1 * x[i, ] * r[i] / v[i]
-            grad[i, 0:beta.size] += 8/np.sqrt(2*np.pi) * erfc(z[i])**(-1) * z[i] * \
-                                 np.exp(-z[i]**2) * x[i, ] * r[i] / np.sqrt(v_rie[i]) / np.sqrt(v[i])
-
-            # Gradient for gamma
-            grad[i, beta.size] += -1 * r[i]**2 / 2 * v[i]**(-2)
-            grad[i, beta.size] += 0.5 / v[i]
-            grad[i, beta.size] += 2 / np.sqrt(2 * np.pi) / erfc(z[i]) * z[i] * np.exp(-z[i]**2) * r[i] * \
-                               np.sqrt(v_ie[i]) / np.sqrt(v_rie[i]) / np.sqrt(v[i]) * (1/v_rie[i] + 1/v[i])
-
-            # Gradient for eta
-            grad[i, -1] += -1 * r[i]**2 / 2 / v[i]**2
-            grad[i, -1] += 0.5 / v[i]
-            grad[i, -1] += 2 / np.sqrt(2 * np.pi) / erfc(z[i]) * z[i] * np.exp(-z[i]**2) * r[i] / \
-                        np.sqrt(v_ie[i]) / np.sqrt(v[i]) * (v_ie[i] / v[i] - 1)
+        grad[:beta.size] += x.T.dot(dlerf*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2) - r/v)
+        grad[beta.size] += 0.5*np.sum(-r**2/v**2 + 1/v + dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
+                                      (1/v_roe + 1/v))
+        grad[-1] += 0.5*np.sum(-r**2/v**2 + 1/v - dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
+                               (1/v_ie - 1/v))
 
         return grad
 
@@ -148,7 +141,8 @@ class MarginalModel(TrimmingCompatibleModel):
 
         # Take the average because the objective
         # is the mean rather than the sum
-        grad = grad / grad.size
+        grad = grad / data.obs.shape[0]
+
         return grad
 
     # pylint:disable=arguments-differ
@@ -185,11 +179,31 @@ class MarginalModel(TrimmingCompatibleModel):
         """
         Compute the initialization of the variable
         """
+        n = len(data.obs)
         beta_init = np.linalg.solve(
             (self.femat.T/data.obs_var).dot(self.femat),
             (self.femat.T/data.obs_var).dot(data.obs)
         )
-        gamma_init = np.zeros(self.revar_size)
-        # eta_init = np.zeros(self.ievar_size)
-        eta_init = 1e-3
-        return np.hstack([beta_init, gamma_init, eta_init])
+        # beta_init = np.zeros(self.femat.shape[1])
+
+        # Estimate the residuals
+        r = data.obs - self.femat.dot(beta_init)
+
+        # Get the largest residual, this is a crude estimate
+        # for the intercept shift required to go through the data
+        alpha = np.max(r)
+        beta_init += alpha
+
+        # Calculate the first moment
+        # E[r_i] = E[u_i] + E[v_i] + E[\epsilon_i] + \alpha
+        # This expression is our estimate of \sqrt{2\eta/\pi}
+        eta = (np.mean(r) - alpha) ** 2 * np.pi / 2
+
+        # Calculate the second moment
+        # (\sum E[r_i^2] - \sum \sigma_i**2)/n =
+        #   \gamma + \eta (1 - 2/\pi) + (\alpha + \sqrt{2\eta / \pi})^2
+        moment2 = np.sum(r**2 - data.obs_se) / n
+        gamma = moment2 - eta * (1 - 2 / np.pi) - (alpha + np.sqrt(2 * eta / np.pi)) ** 2
+        # gamma = 1e-5
+        # eta = 1e-5
+        return np.hstack([beta_init, gamma, eta])
