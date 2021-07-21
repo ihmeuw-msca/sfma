@@ -18,7 +18,8 @@ if __name__ == '__main__':
         'scipy',
         'pandas',
         'xspline',
-        'anml'
+        'anml',
+        'matplotlib'
     ]
 
     test_requirements = [

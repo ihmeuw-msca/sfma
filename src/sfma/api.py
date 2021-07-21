@@ -12,6 +12,8 @@ from sfma.models.marginal import MarginalModel
 from anml.solvers.base import ScipyOpt
 from anml.solvers.composite import TrimmingSolver
 
+from matplotlib import pyplot as plt
+
 
 class SFMAModel:
     def __init__(self,
@@ -30,7 +32,8 @@ class SFMAModel:
                  l_linear: bool = False,
                  include_intercept: bool = True,
                  include_gamma: bool = False,
-                 pct_trimming: float = 0.0):
+                 pct_trimming: float = 0.0,
+                 constr_grid_num: int = 20):
 
         self.col_output = col_output
         self.col_se = col_se
@@ -47,6 +50,7 @@ class SFMAModel:
         self.include_intercept = include_intercept
         self.include_gamma = include_gamma
         self.pct_trimming = pct_trimming
+        self.constr_grid_num = constr_grid_num
 
         if pct_trimming > 1.0:
             raise RuntimeError("Need to have pct trimming <= 1.0.")
@@ -67,7 +71,7 @@ class SFMAModel:
             else:
                 y_bounds = [-np.inf, 0.0]
             derivative_constraints.append(
-                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=5)
+                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=self.constr_grid_num)
             )
         if self.convex or self.concave:
             if self.convex and self.concave:
@@ -77,7 +81,7 @@ class SFMAModel:
             else:
                 y_bounds = [-np.inf, 0.0]
             derivative_constraints.append(
-                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=5)
+                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=self.constr_grid_num)
             )
 
         # Create the spline variable for the input
@@ -141,9 +145,56 @@ class SFMAModel:
         self.inefficiencies = np.zeros(self.data.num_obs)
 
     def fit(self, **kwargs):
+        options = kwargs.get('options', {'solver_options': {}})
         self.trimming.fit(x_init=self.x_init, data=self.data, n=len(self.data.obs),
-                          pct_trimming=self.pct_trimming, **kwargs)
+                          pct_trimming=self.pct_trimming, options=options, **kwargs)
         self.inefficiencies = self.marginal_model.get_ie(self.solver.x_opt, self.data)
+        if self.solver.success:
+            print("\nModel converged successfully! :)")
+        else:
+            print("\nModel failed to converge! :(")
 
-    def predict(self):
-        return self.solver.predict()
+    # TODO: this will need to change when we have multiple predictors
+    def predict(self, df):
+        mat = self.marginal_model.params["beta"].variables[0]._design_matrix(
+            df[self.col_input],
+            create_spline=False
+        )
+        predictions = self.solver.predict(mat=mat)
+        return predictions
+
+    def plot_frontier(self, df, true_frontier=None):
+        """
+        Plot a frontier estimate with the data.
+
+        :param df: data frame to make predictions from
+        :param true_frontier: np.ndarray where the first column is x's and second is y's
+        """
+        predictions = self.predict(df)
+
+        fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+        if true_frontier is not None:
+            ax.plot(true_frontier[:, 0], true_frontier[:, 1], linestyle='solid', c='black',
+                    label='truth')
+        ax.scatter(df[self.col_input], df[self.col_output], c='grey', alpha=0.5, label='observed')
+        ax.errorbar(df[self.col_input],
+                    df[self.col_output],
+                    yerr=df[self.col_se],
+                    linestyle='None', elinewidth=0.5, c='grey', alpha=0.5)
+        ax.plot(df[self.col_input], predictions, c='blue', label='predicted')
+        ax.set_xlabel(self.col_input)
+        ax.set_ylabel(self.col_output)
+
+        if self.pct_trimming > 0.0:
+            outliers = self.marginal_model.w == 0
+            outlier_x = df[self.col_input][outliers]
+            outlier_y = df[self.col_output][outliers]
+            ax.scatter(outlier_x, outlier_y, c='red', marker="X", label='trimmed')
+
+        ax.legend()
+
+    def plot_inefficiencies(self):
+        fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+        ax.hist(self.inefficiencies)
+
+
