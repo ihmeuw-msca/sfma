@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from typing import List
+from dataclasses import dataclass
 
 from anml.parameter.parameter import Parameter
 from anml.parameter.prior import Prior
@@ -15,42 +17,54 @@ from anml.solvers.composite import TrimmingSolver
 from matplotlib import pyplot as plt
 
 
+@dataclass
+class InputVar:
+    """
+    An input variable for frontier, with derivative constraints and spline specs.
+    """
+
+    col_input: str
+    increasing: bool = False
+    decreasing: bool = False
+    concave: bool = False
+    convex: bool = False
+    knots_type: str = 'domain'
+    knots_num: int = 4
+    knots_degree: int = 3
+    r_linear: bool = False
+    l_linear: bool = False
+    constr_grid_num: int = 20
+
+    def __post_init__(self):
+        if self.concave and self.convex:
+            raise RuntimeError("Cannot enforce both concavity and convexity.")
+        if self.increasing and self.decreasing:
+            raise RuntimeError("Cannot enforce both increasing and decreasing trend.")
+        if self.knots_type not in ['domain', 'frequency']:
+            raise RuntimeError("Knots type needs to be either domain or frequency")
+        if self.knots_num < 2:
+            raise RuntimeError("Need at least two knots.")
+        if self.knots_degree < 1:
+            raise RuntimeError("Need at least degree one.")
+
+
 class SFMAModel:
     def __init__(self,
                  df: pd.DataFrame,
                  col_output: str,
                  col_se: str,
-                 col_input: str,
-                 increasing: bool = False,
-                 decreasing: bool = False,
-                 concave: bool = False,
-                 convex: bool = False,
-                 knots_type: str = 'domain',
-                 knots_num: int = 4,
-                 knots_degree: int = 3,
-                 r_linear: bool = False,
-                 l_linear: bool = False,
+                 covariates: List[InputVar],
                  include_intercept: bool = True,
                  include_gamma: bool = False,
-                 pct_trimming: float = 0.0,
-                 constr_grid_num: int = 20):
+                 pct_trimming: float = 0.0):
 
         self.col_output = col_output
         self.col_se = col_se
-        self.col_input = col_input
-        self.increasing = increasing
-        self.decreasing = decreasing
-        self.concave = concave
-        self.convex = convex
-        self.knots_num = knots_num
-        self.knots_type = knots_type
-        self.knots_degree = knots_degree
-        self.r_linear = r_linear
-        self.l_linear = l_linear
+        self.covariates = covariates
+
         self.include_intercept = include_intercept
         self.include_gamma = include_gamma
         self.pct_trimming = pct_trimming
-        self.constr_grid_num = constr_grid_num
 
         if pct_trimming > 1.0:
             raise RuntimeError("Need to have pct trimming <= 1.0.")
@@ -60,47 +74,7 @@ class SFMAModel:
 
         self.data_spec = DataSpecs(col_obs=self.col_output, col_obs_se=self.col_se)
 
-        # Create derivative constraints including monotone constraints
-        # and shape constraints
-        derivative_constraints = []
-        if self.increasing or self.decreasing:
-            if self.increasing and self.decreasing:
-                raise RuntimeError("Cannot have both monotone increasing and decreasing.")
-            if self.increasing:
-                y_bounds = [0.0, np.inf]
-            else:
-                y_bounds = [-np.inf, 0.0]
-            derivative_constraints.append(
-                SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=self.constr_grid_num)
-            )
-        if self.convex or self.concave:
-            if self.convex and self.concave:
-                raise RuntimeError("Cannot have both convex and concave.")
-            if self.convex:
-                y_bounds = [0.0, np.inf]
-            else:
-                y_bounds = [-np.inf, 0.0]
-            derivative_constraints.append(
-                SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=self.constr_grid_num)
-            )
-
-        # Create the spline variable for the input
         params = [
-            Parameter(
-                param_name="beta",
-                variables=[
-                    Spline(
-                        covariate=self.col_input,
-                        knots_type=self.knots_type,
-                        knots_num=self.knots_num,
-                        degree=self.knots_degree,
-                        r_linear=self.r_linear,
-                        l_linear=self.l_linear,
-                        derivative_constr=derivative_constraints,
-                        include_intercept=True
-                    )
-                ]
-            ),
             Parameter(
                 param_name="gamma",
                 variables=[
@@ -121,6 +95,46 @@ class SFMAModel:
                 ]
             )
         ]
+
+        # Create derivative constraints including monotone constraints
+        # and shape constraints
+        derivative_constraints = []
+        for covariate in self.covariates:
+            if covariate.increasing or covariate.decreasing:
+                if covariate.increasing:
+                    y_bounds = [0.0, np.inf]
+                else:
+                    y_bounds = [-np.inf, 0.0]
+                derivative_constraints.append(
+                    SplineLinearConstr(order=1, y_bounds=y_bounds, grid_size=covariate.constr_grid_num)
+                )
+            if covariate.convex or covariate.concave:
+                if covariate.convex:
+                    y_bounds = [0.0, np.inf]
+                else:
+                    y_bounds = [-np.inf, 0.0]
+                derivative_constraints.append(
+                    SplineLinearConstr(order=2, y_bounds=y_bounds, grid_size=covariate.constr_grid_num)
+                )
+
+            # Create the spline variable for the input
+            params.append([
+                Parameter(
+                    param_name=f"beta_{covariate.col_input}",
+                    variables=[
+                        Spline(
+                            covariate=covariate.col_input,
+                            knots_type=covariate.knots_type,
+                            knots_num=covariate.knots_num,
+                            degree=covariate.knots_degree,
+                            r_linear=covariate.r_linear,
+                            l_linear=covariate.l_linear,
+                            derivative_constr=derivative_constraints,
+                            include_intercept=True
+                        )
+                    ]
+                )
+            ])
 
         # Create the parameter set to solve
         # the marginal likelihood problem
@@ -154,15 +168,24 @@ class SFMAModel:
         else:
             print("\nModel failed to converge! :(")
 
-    # TODO: this will need to change when we have multiple predictors
     def predict(self, df):
-        mat = self.marginal_model.params["beta"].variables[0]._design_matrix(
-            df[self.col_input],
-            create_spline=False
-        )
-        predictions = self.solver.predict(mat=mat)
+        """
+        Create predictions based on a (potentially new) data frame.
+
+        :param df: pd.DataFrame
+        """
+        mats = []
+        for covariate in self.covariates:
+            mat = self.marginal_model.params[f"beta_{covariate.col_input}"].variables[0]._design_matrix(
+                df[covariate.col_input],
+                create_spline=False
+            )
+            mats.append(mat)
+        d_mat = np.hstack(mats)
+        predictions = self.solver.predict(mat=d_mat)
         return predictions
 
+    # TODO: Need to discuss how to visualize multiple variables -- this won't work in its current form
     def plot_frontier(self, df, true_frontier=None):
         """
         Plot a frontier estimate with the data.

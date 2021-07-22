@@ -21,28 +21,42 @@ class MarginalModel(TrimmingCompatibleModel):
         if not all([isinstance(param, Parameter) for param in params]):
             raise TypeError("params must be a list of Parameter.")
         param_names = [param.param_name for param in params]
-        self.param_names = ["beta", "gamma", "eta"]
-        if not all([name in self.param_names for name in param_names]):
-            raise ValueError("MarginalModel requires parameter beta, gamma and eta.")
+        if "eta" not in param_names:
+            raise ValueError("MarginalModel requires parameter eta.")
+        if "gamma" not in param_names:
+            raise ValueError("MarginalModel requires parameter gamma.")
+        if not any(["beta" in x for x in param_names]):
+            raise ValueError("MarginalModel requires parameter beta.")
         self.params = {
             param.param_name: param
             for param in params
         }
 
         # extract constraints information
-        self.lb = np.hstack([self.params[name].lb_fe for name in self.param_names])
-        self.ub = np.hstack([self.params[name].ub_fe for name in self.param_names])
+        self.lb = np.hstack([self.params[name].lb_fe for name in param_names])
+        self.ub = np.hstack([self.params[name].ub_fe for name in param_names])
 
         self.C, self.c_lb, self.c_ub = build_linear_constraint([
             (self.params[name].constr_matrix_fe,
              self.params[name].constr_lb_fe,
              self.params[name].constr_ub_fe)
-            for name in self.param_names
+            for name in param_names
         ])
 
     @property
+    def beta_names(self) -> List[str]:
+        betas = []
+        for key, val in self.params:
+            if "beta" in key:
+                betas.append(key)
+        return betas
+
+    @property
     def fevar_size(self) -> int:
-        return self.params["beta"].num_fe
+        num_fe = 0
+        for beta in self.beta_names:
+            num_fe += self.params[beta].num_fe
+        return num_fe
 
     @property
     def revar_size(self) -> int:
@@ -62,7 +76,10 @@ class MarginalModel(TrimmingCompatibleModel):
 
     @property
     def femat(self) -> ndarray:
-        return self.params["beta"].design_matrix_fe
+        mats = []
+        for beta in self.beta_names:
+            mats.append(self.params[beta].design_matrix_fe)
+        return np.hstack(mats)
 
     @property
     def remat(self) -> ndarray:
@@ -192,7 +209,6 @@ class MarginalModel(TrimmingCompatibleModel):
             (self.femat.T/data.obs_var).dot(self.femat),
             (self.femat.T/data.obs_var).dot(data.obs)
         )
-        # beta_init = np.zeros(self.femat.shape[1])
 
         # Estimate the residuals
         r = data.obs - self.femat.dot(beta_init)
