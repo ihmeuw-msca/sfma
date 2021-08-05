@@ -38,8 +38,9 @@ class Simulator:
         else:
             raise RuntimeError("Inefficiency distribution must be half-normal or exponential")
 
-    def simulate(self, n: int = 1, **kwargs):
-        np.random.seed(365)
+    def simulate(self, n: int = 1, seed=None, **kwargs):
+        if seed is not None:
+            np.random.seed(seed)
         sigma = stats.uniform.rvs(loc=self.sigma_min, scale=self.sigma_max, size=n)
         epsilon = stats.norm.rvs(loc=0, scale=sigma, size=n)
 
