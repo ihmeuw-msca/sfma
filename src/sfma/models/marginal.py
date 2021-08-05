@@ -84,7 +84,9 @@ class MarginalModel(TrimmingCompatibleModel):
         return self._w
 
     @w.setter
-    def w(self, weights):
+    def w(self, weights: np.ndarray):
+        if any(weights < 0. or weights > 1.):
+            raise ValueError("Weights are not between 0 and 1.")
         self._w = weights
 
     # pylint:disable=unbalanced-tuple-unpacking
