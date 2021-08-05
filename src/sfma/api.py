@@ -52,8 +52,8 @@ class SFMAModel:
         self.pct_trimming = pct_trimming
         self.constr_grid_num = constr_grid_num
 
-        if pct_trimming > 1.0:
-            raise RuntimeError("Need to have pct trimming <= 1.0.")
+        if pct_trimming >= 1.0 or pct_trimming < 0.0:
+            raise RuntimeError("Need to have pct trimming < 1.0 and >= 0.")
 
         data = df.copy().reset_index(drop=True)
         data['group'] = data.index
