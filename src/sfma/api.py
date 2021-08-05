@@ -144,10 +144,9 @@ class SFMAModel:
         # Placeholder for inefficiencies
         self.inefficiencies = np.zeros(self.data.num_obs)
 
-    def fit(self, x_init=None, **kwargs):
-        if x_init is None:
-            x_init = self.x_init
-        options = kwargs.get('options', {'solver_options': {}})
+    def fit(self, **kwargs):
+        x_init = kwargs.pop('x_init', self.x_init)
+        options = kwargs.pop('options', {'solver_options': {}})
         self.trimming.fit(x_init=x_init, data=self.data, n=len(self.data.obs),
                           pct_trimming=self.pct_trimming, options=options, **kwargs)
         self.inefficiencies = self.marginal_model.get_ie(self.solver.x_opt, self.data)
