@@ -1,8 +1,8 @@
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import numpy as np
 from numpy import ndarray
 
-from anml.models.interface import Model
+from anml.models.interface import TrimmingCompatibleModel
 from anml.parameter.parameter import Parameter
 
 from sfma.data import Data
@@ -10,37 +10,53 @@ from sfma.models.utils import build_linear_constraint, log_erfc
 from scipy.special import erfc
 
 
-class MarginalModel(Model):
+class MarginalModel(TrimmingCompatibleModel):
     """Marginal model for stochastic frontier.
     """
 
     def __init__(self, params: List[Parameter]):
         super().__init__()
+        self._w = None
+
         if not all([isinstance(param, Parameter) for param in params]):
             raise TypeError("params must be a list of Parameter.")
         param_names = [param.param_name for param in params]
-        self.param_names = ["beta", "gamma", "eta"]
-        if not all([name in self.param_names for name in param_names]):
-            raise ValueError("MarginalModel requires parameter beta, gamma and eta.")
+        if "eta" not in param_names:
+            raise ValueError("MarginalModel requires parameter eta.")
+        if "gamma" not in param_names:
+            raise ValueError("MarginalModel requires parameter gamma.")
+        if not any(["beta" in x for x in param_names]):
+            raise ValueError("MarginalModel requires parameter beta.")
         self.params = {
             param.param_name: param
             for param in params
         }
 
         # extract constraints information
-        self.lb = np.hstack([self.params[name].lb_fe for name in self.param_names])
-        self.ub = np.hstack([self.params[name].ub_fe for name in self.param_names])
+        self.lb = np.hstack([self.params[name].lb_fe for name in param_names])
+        self.ub = np.hstack([self.params[name].ub_fe for name in param_names])
 
         self.C, self.c_lb, self.c_ub = build_linear_constraint([
             (self.params[name].constr_matrix_fe,
              self.params[name].constr_lb_fe,
              self.params[name].constr_ub_fe)
-            for name in self.param_names
+            for name in param_names
         ])
 
     @property
+    def beta_names(self) -> List[str]:
+        betas = []
+        for key, val in self.params:
+            if "beta" in key:
+                betas.append(key)
+        return betas
+
+    @property
     def fevar_size(self) -> int:
-        return self.params["beta"].num_fe
+        num_fe = 0
+        for beta in self.beta_names:
+            num_fe += self.params[beta].num_fe
+        return num_fe
 
     @property
     def revar_size(self) -> int:
@@ -51,7 +67,7 @@ class MarginalModel(Model):
         return self.params["eta"].num_fe
 
     @property
-    def var_sizes(self) -> int:
+    def var_sizes(self) -> List[int]:
         return [self.fevar_size, self.revar_size, self.ievar_size]
 
     @property
@@ -60,7 +76,10 @@ class MarginalModel(Model):
 
     @property
     def femat(self) -> ndarray:
-        return self.params["beta"].design_matrix_fe
+        mats = []
+        for beta in self.beta_names:
+            mats.append(self.params[beta].design_matrix_fe)
+        return np.hstack(mats)
 
     @property
     def remat(self) -> ndarray:
@@ -70,15 +89,25 @@ class MarginalModel(Model):
     def iemat(self) -> ndarray:
         return self.params["eta"].design_matrix_fe
 
-    def get_vars(self, x: ndarray) -> Tuple[ndarray]:
+    def get_vars(self, x: ndarray) -> Tuple[ndarray, ndarray, ndarray]:
         variables = np.split(x, np.cumsum([self.var_sizes])[:-1])
         beta = variables[0]
         gamma = np.sqrt(variables[1]**2)
         eta = np.sqrt(variables[2]**2)
         return beta, gamma, eta
 
+    @property
+    def w(self):
+        return self._w
+
+    @w.setter
+    def w(self, weights: np.ndarray):
+        if any(weights < 0. or weights > 1.):
+            raise ValueError("Weights are not between 0 and 1.")
+        self._w = weights
+
     # pylint:disable=unbalanced-tuple-unpacking
-    def objective(self, x: ndarray, data: Data) -> float:
+    def _objective(self, x: ndarray, data: Data) -> ndarray:
         """
         Objective function
         """
@@ -90,20 +119,18 @@ class MarginalModel(Model):
         v = data.obs_var + v_re + v_ie
         z = np.sqrt(v_ie)*r/np.sqrt(2.0*v*(data.obs_var + v_re))
 
-        return np.mean(0.5*r**2/v + 0.5*np.log(v) - log_erfc(z))
+        return 0.5 * r ** 2 / v + 0.5 * np.log(v) - log_erfc(z)
 
-    def gradient(self, x: ndarray, data: Data) -> ndarray:
-        """
-        Computes the gradient.
+    def objective(self, x: ndarray, data: Data) -> float:
+        obj = self._objective(x=x, data=data)
+        if self.w is not None:
+            obj = self.w.dot(obj)
+        return np.mean(obj)
 
-        :param x:
-        :param data:
-        :return:
-        """
+    def _gradient(self, x: ndarray, data: Data) -> ndarray:
         beta, gamma, eta = self.get_vars(x)
         r = data.obs - self.femat.dot(beta)
 
-        # Why are we doing this?
         v_re = np.sum(self.remat ** 2 * gamma, axis=1)
         v_ie = np.sum(self.iemat ** 2 * eta, axis=1)
         v_roe = data.obs_var + v_re
@@ -117,13 +144,27 @@ class MarginalModel(Model):
         dlerf = np.zeros(z.shape)
         dlerf[index] = -2 * z[index] - 1 / z[index]
         dlerf[~index] = -2 * np.exp(-z[~index]**2) / erfc(z[~index]) / np.sqrt(np.pi)
-        grad = np.zeros(beta.size + 2)
+        grad = np.zeros((beta.size + 2, data.obs.shape[0]))
 
-        grad[:beta.size] += x.T.dot(dlerf*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2) - r/v)
-        grad[beta.size] += 0.5*np.sum(-r**2/v**2 + 1/v + dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
-                                      (1/v_roe + 1/v))
-        grad[-1] += 0.5*np.sum(-r**2/v**2 + 1/v - dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*
-                               (1/v_ie - 1/v))
+        grad[:beta.size, ] = x.T * (dlerf*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2) - r/v)
+        grad[beta.size, ] = 0.5*(-r**2/v**2 + 1/v + dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*(1/v_roe + 1/v))
+        grad[-1, ] = 0.5*(-r**2/v**2 + 1/v - dlerf*r*np.sqrt(v_ie/(v_roe*v))/np.sqrt(2)*(1/v_ie - 1/v))
+
+        return grad
+
+    def gradient(self, x: ndarray, data: Data) -> ndarray:
+        """
+        Computes the gradient.
+
+        :param x:
+        :param data:
+        :param w: optional weights
+        :return:
+        """
+        grad = self._gradient(x=x, data=data)
+        if self.w is not None:
+            grad = self.w * grad
+        grad = np.sum(grad, axis=1)
 
         # Take the average because the objective
         # is the mean rather than the sum
@@ -170,7 +211,6 @@ class MarginalModel(Model):
             (self.femat.T/data.obs_var).dot(self.femat),
             (self.femat.T/data.obs_var).dot(data.obs)
         )
-        # beta_init = np.zeros(self.femat.shape[1])
 
         # Estimate the residuals
         r = data.obs - self.femat.dot(beta_init)
