@@ -13,6 +13,74 @@ from sfma.utils import log_erfc, dlog_erfc
 
 
 class SFMAModel:
+    """SFMA model class with all information for fitting and predicting.
+
+    Parameters
+    ----------
+    data : Data
+        Data object with observations and covariates.
+    variables : List[Variable]
+        List of variables model the frontier.
+    include_ie : bool, optional
+        If `True` includes inefficiency into the model. Default to be True.
+    include_re : bool, optional
+        If `True` includes random effects into the model. Default to be False.
+
+    Attributes
+    ----------
+    data : Data
+        Data object with observations and covariates.
+    variables : List[Variable]
+        List of variables model the frontier.
+    include_ie : bool
+        If `True` includes inefficiency into the model.
+    include_re : bool
+        If `True` includes random effects into the model.
+    var_names : List[str]
+        List of variable names.
+    var_sizes : List[int]
+        List of variable sizes.
+    size : int
+        Total size of variables
+    parameter : Parameter
+        Parameter instance to group all variables for convenient design matrices
+        building.
+    mat : np.ndarray
+        Design matrix.
+    gvec : np.ndarray
+        Direct Gaussian prior information.
+    uvec : np.ndarray
+        Direct Uniform prior information.
+    linear_gmat : np.ndarray
+        Linear Gaussian prior mapping.
+    linear_gvec : np.ndarray
+        Linear Guassian prior information.
+    linear_umat : np.ndarray
+        Linear Uniform prior mapping.
+    linear_uvec : np.ndarray
+        Linear Uniform prior information.
+
+    Methods
+    -------
+    get_mat(data)
+        Get design matrix.
+    get_grior()
+        Get direct Gaussian prior.
+    get_uprior()
+        Get direct Uniform prior.
+    get_linear_gprior()
+        Get linear Gaussian prior.
+    get_linear_uprior()
+        Get linear Uniform prior.
+    objective(x)
+        Objective function.
+    gradient(x)
+        Gradient function.
+    fit(x0, **options)
+        Model fitting function.
+    predict(df)
+        Model predicting function.
+    """
 
     data = property(attrgetter("_data"))
     variables = property(attrgetter("_variables"))
@@ -60,16 +128,43 @@ class SFMAModel:
         self.linear_umat, self.linear_uvec = self.get_linear_uprior()
 
     def get_mat(self, data: Optional[Data] = None) -> np.ndarray:
+        """Get design matrix.
+
+        Parameters
+        ----------
+        data : Optional[Data], optional
+            Data used to generate design matrix, by default None. If None, it
+            will use the `self.data` as the data object.
+
+        Returns
+        -------
+        np.ndarray
+            Design matrix.
+        """
         if data is None:
             data = self.data
         return self.parameter.get_mat(data)
 
     def get_gprior(self) -> np.ndarray:
+        """Get direct Gaussian prior.
+
+        Returns
+        -------
+        np.ndarray
+            Direct Gaussian prior.
+        """
         return np.hstack([self.parameter.get_gvec(),
                           np.array([[0.0], [np.inf]]),
                           np.array([[0.0], [np.inf]])])
 
     def get_uprior(self) -> np.ndarray:
+        """Get direct Uniform prior.
+
+        Returns
+        -------
+        np.ndarray
+            Direct Uniform prior.
+        """
         uprior = self.parameter.get_uvec()
         ie_uprior = np.array([[0.0], [np.inf]]) if self.include_ie else \
             np.array([[0.0], [0.0]])
@@ -78,12 +173,26 @@ class SFMAModel:
         return np.hstack([uprior, ie_uprior, re_uprior])
 
     def get_linear_gprior(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get linear Gaussian prior.
+
+        Returns
+        -------
+        np.ndarray
+            Linear Gaussian prior.
+        """
         gmat = self.parameter.get_linear_gmat()
         gvec = self.parameter.get_linear_gvec()
         gmat = np.hstack([gmat, np.zeros((gmat.shape[0], 2))])
         return gmat, gvec
 
     def get_linear_uprior(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get linear Uniform prior.
+
+        Returns
+        -------
+        np.ndarray
+            Linear Uniform prior.
+        """
         umat = self.parameter.get_linear_umat()
         uvec = self.parameter.get_linear_uvec()
         umat = np.hstack([umat, np.zeros((umat.shape[0], 2))])
@@ -100,9 +209,21 @@ class SFMAModel:
         return 0.5*(r**2/v) + 0.5*np.log(v) - log_erfc(z)
 
     def objective(self, x: np.ndarray) -> float:
+        """Objective function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Input variable.
+
+        Returns
+        -------
+        float
+            Objective value.
+        """
         return self._objective(x).dot(self.data.trim_weights)
 
-    def _gradient(self, x: np.ndarray) -> float:
+    def _gradient(self, x: np.ndarray) -> np.ndarray:
         beta, eta, gamma = x[:-2], x[-2], x[-1]
 
         r = self.data.obs - self.mat.dot(beta)
@@ -121,12 +242,32 @@ class SFMAModel:
 
         return grad
 
-    def gradient(self, x: np.ndarray) -> float:
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        """Gradient function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Input variable.
+
+        Returns
+        -------
+        float
+            Gradient vector.
+        """
         return self._gradient(x).dot(self.data.trim_weights)
 
     def fit(self,
             x0: Optional[np.ndarray] = None,
             **options):
+        """Model fitting function.
+
+        Parameters
+        ----------
+        x0 : Optional[np.ndarray], optional
+            Initial input variable, by default None. If None, it will use all
+            one vector as the initial guess.
+        """
         x0 = np.ones(self.size) if x0 is None else x0
         bounds = self.uvec.T
         constraints = [LinearConstraint(
@@ -146,6 +287,18 @@ class SFMAModel:
         self.opt_vars = self.opt_result.x
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
+        """Model predicting function.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input prediction data frame.
+
+        Returns
+        -------
+        np.ndarray
+            Prediction of the frontier.
+        """
         data_pred = self.data.copy()
         data_pred.attach_df(df)
         return self.get_mat(data_pred).dot(self.opt_vars)
