@@ -4,8 +4,7 @@ from scipy.special import erfc
 
 
 def log_erfc(x: ndarray) -> ndarray:
-    """
-    Ln Erfc function.
+    """Ln erfc function.
 
     Parameters
     ----------
@@ -15,20 +14,31 @@ def log_erfc(x: ndarray) -> ndarray:
     Returns
     -------
     np.ndarray
-        Ln Erfc function values.
+        Ln erfc function values.
     """
     y = np.empty(x.shape, dtype=x.dtype)
-    indices0 = x < 25
-    indices1 = ~indices0
-    y[indices0] = np.log(erfc(x[indices0]))
-    y[indices1] = -x[indices1]**2 + np.log(1.0 - 0.5/x[indices1]**2) - \
-        np.log(np.sqrt(np.pi)*x[indices1])
+    indices = x < 25
+    y[indices] = np.log(erfc(x[indices]))
+    y[~indices] = -x[~indices]**2 + np.log(1 - 0.5/x[~indices]**2) - \
+        np.log(np.sqrt(np.pi)*x[~indices])
     return y
 
 
 def dlog_erfc(x: np.ndarray) -> np.ndarray:
-    index = x >= 10.0
-    y = np.zeros(x.shape)
-    y[index] = -2 * x[index] - 1 / x[index]
-    y[~index] = -2 * np.exp(-x[~index]**2) / erfc(x[~index]) / np.sqrt(np.pi)
+    """Derivative of ln erfc function.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input array.
+
+    Returns
+    -------
+    np.ndarray
+        Derivative of ln erfc.
+    """
+    y = np.zeros(x.shape, dtype=x.dtype)
+    indices = x >= 10.0
+    y[indices] = -2*x[indices] - 1/x[indices]
+    y[~indices] = -2*np.exp(-x[~indices]**2)/(erfc(x[~indices])*np.sqrt(np.pi))
     return y

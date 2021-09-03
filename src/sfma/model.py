@@ -145,7 +145,7 @@ class SFMAModel:
 
         self.opt_vars = self.opt_result.x
 
-    def predict(self, df: pd.DataFrame) -> pd.DataFrame:
+    def predict(self, df: pd.DataFrame) -> np.ndarray:
         data_pred = self.data.copy()
         data_pred.attach_df(df)
         return self.get_mat(data_pred).dot(self.opt_vars)
