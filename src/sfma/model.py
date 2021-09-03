@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy import optimize
 from scipy.optimize import LinearConstraint, minimize
 
 from sfma import Data, Variable, Parameter
@@ -76,7 +77,7 @@ class SFMAModel:
         Objective function.
     gradient(x)
         Gradient function.
-    fit(x0, **options)
+    fit(x0, outlier_pct, num_steps, **options)
         Model fitting function.
     predict(df)
         Model predicting function.
@@ -257,9 +258,9 @@ class SFMAModel:
         """
         return self._gradient(x).dot(self.data.trim_weights)
 
-    def fit(self,
-            x0: Optional[np.ndarray] = None,
-            **options):
+    def _fit(self,
+             x0: Optional[np.ndarray] = None,
+             **options):
         """Model fitting function.
 
         Parameters
@@ -285,6 +286,36 @@ class SFMAModel:
                                    **options)
 
         self.opt_vars = self.opt_result.x
+
+    def fit(self,
+            x0: Optional[np.ndarray] = None,
+            outlier_pct: float = 0.0,
+            num_steps: int = 5,
+            **options):
+        """Model fitting function.
+
+        Parameters
+        ----------
+        x0 : Optional[np.ndarray], optional
+            Initial input variable, by default None. If None, it will use all
+            one vector as the initial guess.
+        outlier_pct : float, optional
+            Outlier percentage. Default to be 0.
+        num_steps : int, optional
+            Number of trimming steps. Default to be 5.
+        """
+        self._fit(x0, **options)
+        outlier_pct = max(0.0, min(1.0, outlier_pct))
+        if 0.0 < outlier_pct < 1.0:
+            num_outliers = int(self.data.shape[0]*outlier_pct)
+            weights = np.linspace(1.0, 0.0, num_steps)
+            for weight in weights[1:]:
+                # update trimming weights
+                indices = np.argsort(self._objective(self.opt_vars))[::-1]
+                indices = indices[:num_outliers]
+                self.data.df["trim_weights"] = 1.0
+                self.data.df.loc[indices, "trim_weights"] = weight
+                self._fit(x0=self.opt_vars, **options)
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         """Model predicting function.
