@@ -5,6 +5,8 @@ from operator import attrgetter
 from typing import List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
+from scipy.optimize import LinearConstraint, minimize
 
 from sfma import Data, Variable, Parameter
 from sfma.utils import log_erfc, dlog_erfc
@@ -24,6 +26,9 @@ class SFMAModel:
         self.include_re = include_re
         self.data = data
         self.variables = variables
+
+        self.opt_result = None
+        self.opt_vars = None
 
     @data.setter
     def data(self, data: Data):
@@ -46,6 +51,7 @@ class SFMAModel:
         self.parameter = Parameter("frontier",
                                    self._variables,
                                    inv_link="identity")
+        self.parameter.check_data(self._data)
         # get all variables needed for the optmization
         self.mat = self.get_mat()
         self.gvec = self.get_gprior()
@@ -56,8 +62,6 @@ class SFMAModel:
     def get_mat(self, data: Optional[Data] = None) -> np.ndarray:
         if data is None:
             data = self.data
-        # check all variables
-        self.parameter.check_data(data)
         return self.parameter.get_mat(data)
 
     def get_gprior(self) -> np.ndarray:
@@ -119,3 +123,29 @@ class SFMAModel:
 
     def gradient(self, x: np.ndarray) -> float:
         return self._gradient(x).dot(self.data.trim_weights)
+
+    def fit(self,
+            x0: Optional[np.ndarray] = None,
+            **options):
+        x0 = np.ones(self.size) if x0 is None else x0
+        bounds = self.uvec.T
+        constraints = [LinearConstraint(
+            self.linear_umat,
+            self.linear_uvec[0],
+            self.linear_uvec[1]
+        )] if self.linear_uvec.size > 0 else []
+
+        self.opt_result = minimize(self.objective, x0,
+                                   method="trust-constr",
+                                   jac=self.gradient,
+                                   hess=self.hessian,
+                                   constraints=constraints,
+                                   bounds=bounds,
+                                   **options)
+
+        self.opt_vars = self.opt_result.x
+
+    def predict(self, df: pd.DataFrame) -> pd.DataFrame:
+        data_pred = self.data.copy()
+        data_pred.attach_df(df)
+        return self.get_mat(data_pred).dot(self.opt_vars)
