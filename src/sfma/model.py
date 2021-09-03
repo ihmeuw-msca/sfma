@@ -73,6 +73,8 @@ class SFMAModel:
         Get linear Gaussian prior.
     get_linear_uprior()
         Get linear Uniform prior.
+    get_vars(x)
+        Process vector into variables.
     objective(x)
         Objective function.
     gradient(x)
@@ -154,9 +156,7 @@ class SFMAModel:
         np.ndarray
             Direct Gaussian prior.
         """
-        return np.hstack([self.parameter.get_gvec(),
-                          np.array([[0.0], [np.inf]]),
-                          np.array([[0.0], [np.inf]])])
+        return self.parameter.get_gvec()
 
     def get_uprior(self) -> np.ndarray:
         """Get direct Uniform prior.
@@ -183,7 +183,6 @@ class SFMAModel:
         """
         gmat = self.parameter.get_linear_gmat()
         gvec = self.parameter.get_linear_gvec()
-        gmat = np.hstack([gmat, np.zeros((gmat.shape[0], 2))])
         return gmat, gvec
 
     def get_linear_uprior(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -199,8 +198,28 @@ class SFMAModel:
         umat = np.hstack([umat, np.zeros((umat.shape[0], 2))])
         return umat, uvec
 
+    def get_vars(self, x: np.ndarray) -> Tuple[np.ndarray, float, float]:
+        """Process vector into variables.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Input vector.
+
+        Returns
+        -------
+        Tuple[np.ndarray, float, float]
+            Returns beta, eta and gamma.
+        """
+        beta, eta, gamma = x[:-2], np.sqrt(x[-2]**2), np.sqrt(x[-1]**2)
+        if not self.include_ie:
+            eta = 0.0
+        if not self.include_re:
+            gamma = 0.0
+        return beta, eta, gamma
+
     def _objective(self, x: np.ndarray) -> np.ndarray:
-        beta, eta, gamma = x[:-2], x[-2], x[-1]
+        beta, eta, gamma = self.get_vars(x)
 
         r = self.data.obs - self.mat.dot(beta)
         t = 1/self.data.weights + gamma
@@ -222,10 +241,17 @@ class SFMAModel:
         float
             Objective value.
         """
-        return self._objective(x).dot(self.data.trim_weights)
+        beta = x[:-2]
+        value = self._objective(x).dot(self.data.trim_weights)
+        value += 0.5*np.sum(((beta - self.gvec[0])/self.gvec[1])**2)
+        value += 0.5*np.sum(
+            ((self.linear_gmat.dot(beta) - self.linear_gvec[0]) /
+             self.linear_gvec[1])**2
+        )
+        return value
 
     def _gradient(self, x: np.ndarray) -> np.ndarray:
-        beta, eta, gamma = x[:-2], x[-2], x[-1]
+        beta, eta, gamma = self.get_vars(x)
 
         r = self.data.obs - self.mat.dot(beta)
         t = 1/self.data.weights + gamma
@@ -256,7 +282,14 @@ class SFMAModel:
         float
             Gradient vector.
         """
-        return self._gradient(x).dot(self.data.trim_weights)
+        beta = x[:-2]
+        value = self._gradient(x).dot(self.data.trim_weights)
+        value[:-2] += (beta - self.gvec[0])/self.gvec[1]**2
+        value[:-2] += self.linear_gmat.T.dot(
+            (self.linear_gmat.dot(beta) - self.linear_gvec[0]) /
+            self.linear_gvec[1]
+        )
+        return value
 
     def _fit(self,
              x0: Optional[np.ndarray] = None,
@@ -280,7 +313,6 @@ class SFMAModel:
         self.opt_result = minimize(self.objective, x0,
                                    method="trust-constr",
                                    jac=self.gradient,
-                                   hess=self.hessian,
                                    constraints=constraints,
                                    bounds=bounds,
                                    **options)
@@ -307,7 +339,7 @@ class SFMAModel:
         self._fit(x0, **options)
         outlier_pct = max(0.0, min(1.0, outlier_pct))
         if 0.0 < outlier_pct < 1.0:
-            num_outliers = int(self.data.shape[0]*outlier_pct)
+            num_outliers = int(self.data.num_obs*outlier_pct)
             weights = np.linspace(1.0, 0.0, num_steps)
             for weight in weights[1:]:
                 # update trimming weights
@@ -330,6 +362,7 @@ class SFMAModel:
         np.ndarray
             Prediction of the frontier.
         """
+        beta, _, _ = self.get_vars(self.opt_vars)
         data_pred = self.data.copy()
         data_pred.attach_df(df)
-        return self.get_mat(data_pred).dot(self.opt_vars)
+        return self.get_mat(data_pred).dot(beta)

@@ -67,8 +67,7 @@ def test_mat(data, variables):
 def test_gprior(data, variables):
     model = SFMAModel(data, variables)
     assert np.allclose(model.gvec,
-                       np.array([[0.0, 0.0, 0.0, 0.0],
-                                 [np.inf, 1.0, np.inf, np.inf]]))
+                       np.array([[0.0, 0.0], [np.inf, 1.0]]))
 
 
 @pytest.mark.parametrize("include_ie", [True, False])
@@ -84,7 +83,7 @@ def test_uprior(data, variables, include_ie, include_re):
 
 @pytest.mark.parametrize("x", [np.arange(4)*1.0, np.ones(4)])
 def test_gradient(data, variables, x):
-    model = SFMAModel(data, variables)
+    model = SFMAModel(data, variables, True, True)
     my_gradient = model.gradient(x)
     tr_gradient = ad_jacobian(model.objective, x)
     assert np.allclose(my_gradient, tr_gradient)
