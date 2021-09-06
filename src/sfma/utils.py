@@ -42,3 +42,20 @@ def dlog_erfc(x: np.ndarray) -> np.ndarray:
     y[indices] = -2*x[indices] - 1/x[indices]
     y[~indices] = -2*np.exp(-x[~indices]**2)/(erfc(x[~indices])*np.sqrt(np.pi))
     return y
+
+
+def d2log_erfc(x: np.ndarray) -> np.ndarray:
+    """Second order derivative of ln erfc function.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input array.
+
+    Returns
+    -------
+    np.ndarray
+        Second order derivative of ln erfc.
+    """
+    d1 = dlog_erfc(x)
+    return -2*x*d1 - d1**2

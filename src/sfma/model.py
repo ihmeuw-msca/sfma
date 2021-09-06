@@ -6,11 +6,10 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy import optimize
 from scipy.optimize import LinearConstraint, minimize
 
 from sfma import Data, Variable, Parameter
-from sfma.utils import log_erfc, dlog_erfc
+from sfma.utils import log_erfc, dlog_erfc, d2log_erfc
 
 
 class SFMAModel:
@@ -79,6 +78,8 @@ class SFMAModel:
         Objective function.
     gradient(x)
         Gradient function.
+    hessian(x)
+        Hessian function.
     fit(x0, outlier_pct, num_steps, **options)
         Model fitting function.
     predict(df)
@@ -100,6 +101,9 @@ class SFMAModel:
 
         self.opt_result = None
         self.opt_vars = None
+        self.beta = np.ones(self.size - 2)
+        self.eta = float(include_ie)
+        self.gamma = float(include_re)
 
     @data.setter
     def data(self, data: Data):
@@ -212,21 +216,19 @@ class SFMAModel:
             Returns beta, eta and gamma.
         """
         beta, eta, gamma = x[:-2], np.sqrt(x[-2]**2), np.sqrt(x[-1]**2)
-        if not self.include_ie:
-            eta = 0.0
-        if not self.include_re:
-            gamma = 0.0
+        eta = float(self.include_ie)*eta
+        gamma = float(self.include_re)*gamma
         return beta, eta, gamma
 
-    def _objective(self, x: np.ndarray) -> np.ndarray:
+    def _objective(self, x: np.ndarray) -> float:
         beta, eta, gamma = self.get_vars(x)
 
         r = self.data.obs - self.mat.dot(beta)
         t = 1/self.data.weights + gamma
         v = t + eta
-        z = np.sqrt(eta)*r/np.sqrt(2*v*t)
+        z = np.sqrt(eta)/np.sqrt(2*v*t)
 
-        return 0.5*(r**2/v) + 0.5*np.log(v) - log_erfc(z)
+        return 0.5*(r**2/v) + 0.5*np.log(v) - log_erfc(z*r)
 
     def objective(self, x: np.ndarray) -> float:
         """Objective function.
@@ -241,33 +243,16 @@ class SFMAModel:
         float
             Objective value.
         """
-        beta = x[:-2]
-        value = self._objective(x).dot(self.data.trim_weights)
+        beta, _, _ = self.get_vars(x)
+        w = self.data.trim_weights
+
+        value = w.dot(self._objective(x))
         value += 0.5*np.sum(((beta - self.gvec[0])/self.gvec[1])**2)
         value += 0.5*np.sum(
             ((self.linear_gmat.dot(beta) - self.linear_gvec[0]) /
              self.linear_gvec[1])**2
         )
         return value
-
-    def _gradient(self, x: np.ndarray) -> np.ndarray:
-        beta, eta, gamma = self.get_vars(x)
-
-        r = self.data.obs - self.mat.dot(beta)
-        t = 1/self.data.weights + gamma
-        v = t + eta
-        c1 = np.sqrt(eta)/np.sqrt(2*v*t)
-        z = c1*r
-        c2 = dlog_erfc(z)*z
-        c3 = -r**2/v**2 + 1/v
-
-        # gradient
-        grad = np.zeros((x.size, self.data.num_obs), dtype=x.dtype)
-        grad[:-2] = self.mat.T*(c2/r - r/v)
-        grad[-2] = 0.5*(c3 + c2*(1/v - 1/eta))
-        grad[-1] = 0.5*(c3 + c2*(1/v + 1/t))
-
-        return grad
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         """Gradient function.
@@ -282,14 +267,80 @@ class SFMAModel:
         float
             Gradient vector.
         """
-        beta = x[:-2]
-        value = self._gradient(x).dot(self.data.trim_weights)
-        value[:-2] += (beta - self.gvec[0])/self.gvec[1]**2
-        value[:-2] += self.linear_gmat.T.dot(
+        beta, eta, gamma = self.get_vars(x)
+        w = self.data.trim_weights
+
+        r = self.data.obs - self.mat.dot(beta)
+        t = 1/self.data.weights + gamma
+        v = t + eta
+        z = np.sqrt(eta)/np.sqrt(2*v*t)
+
+        dlr = -r/v
+        dzr = dlog_erfc(z*r)
+        dlv = 0.5*(-r**2/v**2 + 1/v)
+        dze = 0.5*z*(1/eta - 1/v)
+        dzg = 0.5*z*(-1/t - 1/v)
+
+        # gradient
+        grad_r = self.mat.T.dot(w*(dlr + dzr*z))
+        grad_e = w.dot(dlv - dzr*r*dze)
+        grad_g = w.dot(dlv - dzr*r*dzg)
+
+        grad_r += (beta - self.gvec[0])/self.gvec[1]**2
+        grad_r += self.linear_gmat.T.dot(
             (self.linear_gmat.dot(beta) - self.linear_gvec[0]) /
             self.linear_gvec[1]
         )
-        return value
+        return np.hstack([grad_r, grad_e, grad_g])
+
+    def hessian(self, x: np.ndarray) -> np.ndarray:
+        """Hessian function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Input variable.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        beta, eta, gamma = self.get_vars(x)
+        w = self.data.trim_weights
+
+        r = self.data.obs - self.mat.dot(beta)
+        t = 1/self.data.weights + gamma
+        v = t + eta
+        z = np.sqrt(eta)/np.sqrt(2*v*t)
+
+        dzr = dlog_erfc(z*r)
+        dze = 0.5*z*(1/eta - 1/v)
+        dzg = 0.5*z*(-1/t - 1/v)
+
+        d2lr = 1/v
+        dlrv = r/v**2
+        d2zr = d2log_erfc(z*r)
+        d2lv = r**2/v**3 - 0.5/v**2
+        d2ze = 0.25*z*(1/eta - 1/v)**2 + 0.5*z*(-1/eta**2 + 1/v**2)
+        dzeg = 0.25*z*(1/eta - 1/v)*(-1/t - 1/v) + 0.5*z/v**2
+        d2zg = 0.25*z*(1/t + 1/v)**2 + 0.5*z*(1/t**2 + 1/v**2)
+
+        hess_rr = (self.mat.T*(w*(d2lr - d2zr*z**2))).dot(self.mat)
+        hess_re = self.mat.T.dot(w*(dlrv + d2zr*(z*r)*dze + dzr*dze))
+        hess_rg = self.mat.T.dot(w*(dlrv + d2zr*(z*r)*dzg + dzr*dzg))
+        hess_ee = w.dot(d2lv - d2zr*(r**2)*(dze**2) - dzr*r*d2ze)
+        hess_eg = w.dot(d2lv - d2zr*(r**2)*(dze*dzg) - dzr*r*dzeg)
+        hess_gg = w.dot(d2lv - d2zr*(r**2)*(dzg**2) - dzr*r*d2zg)
+
+        hess_rr += np.diag(1/self.gvec[1]**2) + \
+            (self.linear_gmat.T/self.linear_gvec[1]**2).dot(self.linear_gmat)
+
+        return np.block([
+            [hess_rr, hess_re[:, None], hess_rg[:, None]],
+            [hess_re, hess_ee, hess_eg],
+            [hess_rg, hess_eg, hess_gg]
+        ])
 
     def _fit(self,
              x0: Optional[np.ndarray] = None,
@@ -313,11 +364,15 @@ class SFMAModel:
         self.opt_result = minimize(self.objective, x0,
                                    method="trust-constr",
                                    jac=self.gradient,
+                                   hess=self.hessian,
                                    constraints=constraints,
                                    bounds=bounds,
                                    **options)
 
         self.opt_vars = self.opt_result.x
+        self.beta = self.opt_result.x[:-2]
+        self.eta = self.opt_result.x[-2]
+        self.gamma = self.opt_result.x[-1]
 
     def fit(self,
             x0: Optional[np.ndarray] = None,

@@ -87,3 +87,11 @@ def test_gradient(data, variables, x):
     my_gradient = model.gradient(x)
     tr_gradient = ad_jacobian(model.objective, x)
     assert np.allclose(my_gradient, tr_gradient)
+
+
+@pytest.mark.parametrize("x", [np.arange(4)*1.0, np.ones(4)])
+def test_hessian(data, variables, x):
+    model = SFMAModel(data, variables, True, True)
+    my_hess = model.hessian(x)
+    tr_hess = ad_jacobian(model.gradient, x, out_shape=(x.size,))
+    assert np.allclose(my_hess, tr_hess)
