@@ -23,7 +23,7 @@ def test_dlog_erfc():
         log_erfc(np.array([x[i] + 1e-10j]))[0].imag/1e-10
         for i in range(x.size)
     ])
-    assert np.allclose(my_value, tr_value, rtol=1e-3)
+    assert np.allclose(my_value, tr_value)
 
 
 def test_d2log_erfc():
@@ -33,4 +33,4 @@ def test_d2log_erfc():
         dlog_erfc(np.array([x[i] + 1e-10j]))[0].imag/1e-10
         for i in range(x.size)
     ])
-    assert np.allclose(my_value, tr_value, rtol=1e-1)
+    assert np.allclose(my_value, tr_value)
