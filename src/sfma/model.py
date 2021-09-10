@@ -200,7 +200,7 @@ class SFMAModel:
         v = t + eta
         z = np.sqrt(eta)/np.sqrt(2*v*t)
 
-        return 0.5*(r**2/v) + 0.5*np.log(v) - log_erfc(z*r)
+        return 0.5*(r**2/v) + 0.5*np.log(2*np.pi*v) - log_erfc(z*r)
 
     def objective_beta(self, beta: np.ndarray) -> float:
         """Objective value with respect to beta.
@@ -373,7 +373,6 @@ class SFMAModel:
         """Paratial minimize eta."""
         if self.include_ie:
             result = minimize_scalar(self.objective_eta,
-                                     bounds=[0.0, np.inf],
                                      **options)
             self.eta = result.x
 
@@ -381,7 +380,6 @@ class SFMAModel:
         """Partial minimize gamma"""
         if self.include_re:
             result = minimize_scalar(self.objective_gamma,
-                                     bounds=[0.0, np.inf],
                                      **options)
             self.gamma = result.x
 
