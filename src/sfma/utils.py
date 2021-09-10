@@ -38,9 +38,10 @@ def dlog_erfc(x: np.ndarray) -> np.ndarray:
         Derivative of ln erfc.
     """
     y = np.zeros(x.shape, dtype=x.dtype)
-    indices = x >= 10.0
-    y[indices] = -2*x[indices] - 1/x[indices]
-    y[~indices] = -2*np.exp(-x[~indices]**2)/(erfc(x[~indices])*np.sqrt(np.pi))
+    indices = x < 25
+    y[indices] = -2*np.exp(-x[indices]**2)/(erfc(x[indices])*np.sqrt(np.pi))
+    y[~indices] = -2*x[~indices] - 1/x[~indices] + 2/(2*x[~indices]**3 - x[~indices])
+
     return y
 
 

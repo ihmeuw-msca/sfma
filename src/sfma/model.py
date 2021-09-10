@@ -2,14 +2,15 @@
 Model class with all information to fit and predict the frontier.
 """
 from operator import attrgetter
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import LinearConstraint, minimize
+from scipy.optimize import LinearConstraint, minimize_scalar
 
-from sfma import Data, Variable, Parameter
-from sfma.utils import log_erfc, dlog_erfc, d2log_erfc
+from sfma import Data, Parameter, Variable
+from sfma.solver import IPSolver, proj_csimplex
+from sfma.utils import d2log_erfc, dlog_erfc, log_erfc
 
 
 class SFMAModel:
@@ -36,21 +37,11 @@ class SFMAModel:
         If `True` includes inefficiency into the model.
     include_re : bool
         If `True` includes random effects into the model.
-    var_names : List[str]
-        List of variable names.
-    var_sizes : List[int]
-        List of variable sizes.
-    size : int
-        Total size of variables
     parameter : Parameter
         Parameter instance to group all variables for convenient design matrices
         building.
     mat : np.ndarray
         Design matrix.
-    gvec : np.ndarray
-        Direct Gaussian prior information.
-    uvec : np.ndarray
-        Direct Uniform prior information.
     linear_gmat : np.ndarray
         Linear Gaussian prior mapping.
     linear_gvec : np.ndarray
@@ -72,15 +63,22 @@ class SFMAModel:
         Get linear Gaussian prior.
     get_linear_uprior()
         Get linear Uniform prior.
-    get_vars(x)
-        Process vector into variables.
-    objective(x)
-        Objective function.
-    gradient(x)
-        Gradient function.
-    hessian(x)
-        Hessian function.
-    fit(x0, outlier_pct, num_steps, **options)
+    objective_beta(beta)
+        Objective value with respect to beta.
+    gradient_beta(beta)
+        Gradient vector with respect to beta.
+    hessian_beta(beta)
+        Hessian matrix with respect to beta.
+    objective_eta(eta)
+        Objective value with respect to eta.
+    gradient_eta(eta)
+        Gradient value with respect to eta.
+    objective_gamma(gamma)
+        Objective value with respect to gamma.
+    gradient_gamma(gamma)
+        Gradient value with respect to gamma.
+    fit(outlier_pct, trim_max_iter, trim_step_size, trim_tol, trim_verbose,
+        **options)
         Model fitting function.
     predict(df)
         Model predicting function.
@@ -99,9 +97,17 @@ class SFMAModel:
         self.data = data
         self.variables = variables
 
-        self.opt_result = None
-        self.opt_vars = None
-        self.beta = np.ones(self.size - 2)
+        # create parameter
+        self.parameter = Parameter("frontier", self.variables, inv_link="identity")
+        self.parameter.check_data(self.data)
+
+        # get all variables needed for the optmization
+        self.mat = self.get_mat()
+        self.linear_gmat, self.linear_gvec = self.get_linear_gprior()
+        self.linear_umat, self.linear_uvec = self.get_linear_uprior()
+
+        # initialize the variables
+        self.beta = np.ones(self.parameter.size)
         self.eta = float(include_ie)
         self.gamma = float(include_re)
 
@@ -118,21 +124,6 @@ class SFMAModel:
             raise TypeError(f"{type(self).__name__}.variables must be a list of"
                             " instances of Variable.")
         self._variables = list(variables)
-        # get variable names and sizes
-        self.var_names = [var.name for var in self._variables] + ["ie", "re"]
-        self.var_sizes = [var.size for var in self._variables] + [1, 1]
-        self.size = sum(self.var_sizes)
-        # create parameter
-        self.parameter = Parameter("frontier",
-                                   self._variables,
-                                   inv_link="identity")
-        self.parameter.check_data(self._data)
-        # get all variables needed for the optmization
-        self.mat = self.get_mat()
-        self.gvec = self.get_gprior()
-        self.uvec = self.get_uprior()
-        self.linear_gmat, self.linear_gvec = self.get_linear_gprior()
-        self.linear_umat, self.linear_uvec = self.get_linear_uprior()
 
     def get_mat(self, data: Optional[Data] = None) -> np.ndarray:
         """Get design matrix.
@@ -152,31 +143,6 @@ class SFMAModel:
             data = self.data
         return self.parameter.get_mat(data)
 
-    def get_gprior(self) -> np.ndarray:
-        """Get direct Gaussian prior.
-
-        Returns
-        -------
-        np.ndarray
-            Direct Gaussian prior.
-        """
-        return self.parameter.get_gvec()
-
-    def get_uprior(self) -> np.ndarray:
-        """Get direct Uniform prior.
-
-        Returns
-        -------
-        np.ndarray
-            Direct Uniform prior.
-        """
-        uprior = self.parameter.get_uvec()
-        ie_uprior = np.array([[0.0], [np.inf]]) if self.include_ie else \
-            np.array([[0.0], [0.0]])
-        re_uprior = np.array([[0.0], [np.inf]]) if self.include_re else \
-            np.array([[0.0], [0.0]])
-        return np.hstack([uprior, ie_uprior, re_uprior])
-
     def get_linear_gprior(self) -> Tuple[np.ndarray, np.ndarray]:
         """Get linear Gaussian prior.
 
@@ -187,6 +153,8 @@ class SFMAModel:
         """
         gmat = self.parameter.get_linear_gmat()
         gvec = self.parameter.get_linear_gvec()
+        gmat = np.vstack([gmat, np.identity(self.parameter.size)])
+        gvec = np.hstack([gvec, self.parameter.get_gvec()])
         return gmat, gvec
 
     def get_linear_uprior(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -199,29 +167,33 @@ class SFMAModel:
         """
         umat = self.parameter.get_linear_umat()
         uvec = self.parameter.get_linear_uvec()
-        umat = np.hstack([umat, np.zeros((umat.shape[0], 2))])
+        umat = np.vstack([umat, np.identity(self.parameter.size)])
+        uvec = np.hstack([uvec, self.parameter.get_uvec()])
         return umat, uvec
 
-    def get_vars(self, x: np.ndarray) -> Tuple[np.ndarray, float, float]:
-        """Process vector into variables.
+    def _objective(self,
+                   beta: Optional[np.ndarray] = None,
+                   eta: Optional[float] = None,
+                   gamma: Optional[float] = None) -> np.ndarray:
+        """Objective function for each data point.
 
         Parameters
         ----------
-        x : np.ndarray
-            Input vector.
+        beta : Optional[np.ndarray], optional
+            Beta variable, by default None. When it is None, use `self.beta`.
+        eta : Optional[float], optional
+            Eta variable, by default None. When it is None, use `self.eta`.
+        gamma : Optional[float], optional
+            Gamma variable, by default None. When it is None, use `self.gamma`.
 
         Returns
         -------
-        Tuple[np.ndarray, float, float]
-            Returns beta, eta and gamma.
+        np.ndarray
+            Objective value for each data point.
         """
-        beta, eta, gamma = x[:-2], np.sqrt(x[-2]**2), np.sqrt(x[-1]**2)
-        eta = float(self.include_ie)*eta
-        gamma = float(self.include_re)*gamma
-        return beta, eta, gamma
-
-    def _objective(self, x: np.ndarray) -> float:
-        beta, eta, gamma = self.get_vars(x)
+        beta = self.beta if beta is None else beta
+        eta = self.eta if eta is None else eta
+        gamma = self.gamma if gamma is None else gamma
 
         r = self.data.obs - self.mat.dot(beta)
         t = 1/self.data.weights + gamma
@@ -230,179 +202,296 @@ class SFMAModel:
 
         return 0.5*(r**2/v) + 0.5*np.log(v) - log_erfc(z*r)
 
-    def objective(self, x: np.ndarray) -> float:
-        """Objective function.
+    def objective_beta(self, beta: np.ndarray) -> float:
+        """Objective value with respect to beta.
 
         Parameters
         ----------
-        x : np.ndarray
-            Input variable.
+        beta : np.ndarray
+            Beta variable.
 
         Returns
         -------
         float
             Objective value.
         """
-        beta, _, _ = self.get_vars(x)
-        w = self.data.trim_weights
+        prior_r = self.linear_gmat.dot(beta) - self.linear_gvec[0]
+        return self.data.trim_weights.dot(self._objective(beta=beta)) + \
+            0.5*np.sum(prior_r**2/self.linear_gvec[1]**2)
 
-        value = w.dot(self._objective(x))
-        value += 0.5*np.sum(((beta - self.gvec[0])/self.gvec[1])**2)
-        value += 0.5*np.sum(
-            ((self.linear_gmat.dot(beta) - self.linear_gvec[0]) /
-             self.linear_gvec[1])**2
-        )
-        return value
-
-    def gradient(self, x: np.ndarray) -> np.ndarray:
-        """Gradient function.
+    def gradient_beta(self, beta: np.ndarray) -> np.ndarray:
+        """Gradient vector with respect to beta.
 
         Parameters
         ----------
-        x : np.ndarray
-            Input variable.
+        beta : np.ndarray
+            Beta variable.
 
         Returns
         -------
-        float
+        np.ndarray
             Gradient vector.
         """
-        beta, eta, gamma = self.get_vars(x)
-        w = self.data.trim_weights
-
         r = self.data.obs - self.mat.dot(beta)
-        t = 1/self.data.weights + gamma
-        v = t + eta
-        z = np.sqrt(eta)/np.sqrt(2*v*t)
+        t = 1/self.data.weights + self.gamma
+        v = t + self.eta
+        z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
         dlr = -r/v
         dzr = dlog_erfc(z*r)
-        dlv = 0.5*(-r**2/v**2 + 1/v)
-        dze = 0.5*z*(1/eta - 1/v)
-        dzg = 0.5*z*(-1/t - 1/v)
 
-        # gradient
-        grad_r = self.mat.T.dot(w*(dlr + dzr*z))
-        grad_e = w.dot(dlv - dzr*r*dze)
-        grad_g = w.dot(dlv - dzr*r*dzg)
+        prior_r = self.linear_gmat.dot(beta) - self.linear_gvec[0]
+        return self.mat.T.dot(self.data.trim_weights*(dlr + dzr*z)) + \
+            self.linear_gmat.T.dot(prior_r / self.linear_gvec[1]**2)
 
-        grad_r += (beta - self.gvec[0])/self.gvec[1]**2
-        grad_r += self.linear_gmat.T.dot(
-            (self.linear_gmat.dot(beta) - self.linear_gvec[0]) /
-            self.linear_gvec[1]
-        )
-        return np.hstack([grad_r, grad_e, grad_g])
-
-    def hessian(self, x: np.ndarray) -> np.ndarray:
-        """Hessian function.
+    def hessian_beta(self, beta: np.ndarray) -> np.ndarray:
+        """Hessian matrix with respect to beta.
 
         Parameters
         ----------
-        x : np.ndarray
-            Input variable.
+        beta : np.ndarray
+            Beta variable.
 
         Returns
         -------
         np.ndarray
             Hessian matrix.
         """
-        beta, eta, gamma = self.get_vars(x)
         w = self.data.trim_weights
 
         r = self.data.obs - self.mat.dot(beta)
-        t = 1/self.data.weights + gamma
+        t = 1/self.data.weights + self.gamma
+        v = t + self.eta
+        z = np.sqrt(self.eta)/np.sqrt(2*v*t)
+
+        d2lr = 1/v
+        d2zr = d2log_erfc(z*r)
+
+        return (self.mat.T*(w*(d2lr - d2zr*z**2))).dot(self.mat) + \
+            (self.linear_gmat.T/self.linear_gvec[1]**2).dot(self.linear_gmat)
+
+    def objective_eta(self, eta: float) -> float:
+        """Objective value with respect to eta.
+
+        Parameters
+        ----------
+        eta : float
+            Eta variable.
+
+        Returns
+        -------
+        float
+            Objective value.
+        """
+        return self.data.trim_weights.dot(self._objective(eta=eta))
+
+    def gradient_eta(self, eta: float) -> float:
+        """Gradient value with repsect to eta.
+
+        Parameters
+        ----------
+        eta : float
+            Eta variable.
+
+        Returns
+        -------
+        float
+            Derivative of eta.
+        """
+        r = self.data.obs - self.mat.dot(self.beta)
+        t = 1/self.data.weights + self.gamma
         v = t + eta
         z = np.sqrt(eta)/np.sqrt(2*v*t)
 
         dzr = dlog_erfc(z*r)
+        dlv = 0.5*(-r**2/v**2 + 1/v)
         dze = 0.5*z*(1/eta - 1/v)
-        dzg = 0.5*z*(-1/t - 1/v)
 
-        d2lr = 1/v
-        dlrv = r/v**2
-        d2zr = d2log_erfc(z*r)
-        d2lv = r**2/v**3 - 0.5/v**2
-        d2ze = 0.25*z*(1/eta - 1/v)**2 + 0.5*z*(-1/eta**2 + 1/v**2)
-        dzeg = 0.25*z*(1/eta - 1/v)*(-1/t - 1/v) + 0.5*z/v**2
-        d2zg = 0.25*z*(1/t + 1/v)**2 + 0.5*z*(1/t**2 + 1/v**2)
+        return self.data.trim_weights.dot(dlv - dzr*r*dze)
 
-        hess_rr = (self.mat.T*(w*(d2lr - d2zr*z**2))).dot(self.mat)
-        hess_re = self.mat.T.dot(w*(dlrv + d2zr*(z*r)*dze + dzr*dze))
-        hess_rg = self.mat.T.dot(w*(dlrv + d2zr*(z*r)*dzg + dzr*dzg))
-        hess_ee = w.dot(d2lv - d2zr*(r**2)*(dze**2) - dzr*r*d2ze)
-        hess_eg = w.dot(d2lv - d2zr*(r**2)*(dze*dzg) - dzr*r*dzeg)
-        hess_gg = w.dot(d2lv - d2zr*(r**2)*(dzg**2) - dzr*r*d2zg)
-
-        hess_rr += np.diag(1/self.gvec[1]**2) + \
-            (self.linear_gmat.T/self.linear_gvec[1]**2).dot(self.linear_gmat)
-
-        return np.block([
-            [hess_rr, hess_re[:, None], hess_rg[:, None]],
-            [hess_re, hess_ee, hess_eg],
-            [hess_rg, hess_eg, hess_gg]
-        ])
-
-    def _fit(self,
-             x0: Optional[np.ndarray] = None,
-             **options):
-        """Model fitting function.
+    def objective_gamma(self, gamma: float) -> float:
+        """Objective value with respect to gamma.
 
         Parameters
         ----------
-        x0 : Optional[np.ndarray], optional
-            Initial input variable, by default None. If None, it will use all
-            one vector as the initial guess.
+        gamma : float
+            Gamma variable.
+
+        Returns
+        -------
+        float
+            Objective value.
         """
-        x0 = np.ones(self.size) if x0 is None else x0
-        bounds = self.uvec.T
+        return self.data.trim_weights.dot(self._objective(gamma=gamma))
+
+    def gradient_gamma(self, gamma: float) -> float:
+        """Gradient value with respect to gamma.
+
+        Parameters
+        ----------
+        gamma : float
+            Gamma variable.
+
+        Returns
+        -------
+        float
+            Derivative of gamma.
+        """
+        r = self.data.obs - self.mat.dot(self.beta)
+        t = 1/self.data.weights + gamma
+        v = t + self.eta
+        z = np.sqrt(self.eta)/np.sqrt(2*v*t)
+
+        dzr = dlog_erfc(z*r)
+        dlv = 0.5*(-r**2/v**2 + 1/v)
+        dzg = 0.5*z*(-1/t - 1/v)
+
+        return self.data.trim_weights.dot(dlv - dzr*r*dzg)
+
+    def _fit_beta(self,
+                  beta0: Optional[np.ndarray] = None,
+                  **options):
+        """Partially minimize beta.
+
+        Parameters
+        ----------
+        beta0 : Optional[np.ndarray], optional
+            Initial guess of beta variable, by default None. When it is None,
+            use `self.beta`.
+        """
+        beta0 = self.beta.copy() if beta0 is None else beta0
         constraints = [LinearConstraint(
             self.linear_umat,
             self.linear_uvec[0],
             self.linear_uvec[1]
         )] if self.linear_uvec.size > 0 else []
 
-        self.opt_result = minimize(self.objective, x0,
-                                   method="trust-constr",
-                                   jac=self.gradient,
-                                   hess=self.hessian,
-                                   constraints=constraints,
-                                   bounds=bounds,
-                                   **options)
+        solver = IPSolver(self.gradient_beta, self.hessian_beta, constraints[0])
+        self.beta = solver.minimize(beta0, **options)
 
-        self.opt_vars = self.opt_result.x
-        self.beta = self.opt_result.x[:-2]
-        self.eta = self.opt_result.x[-2]
-        self.gamma = self.opt_result.x[-1]
+    def _fit_eta(self, **options):
+        """Paratial minimize eta."""
+        if self.include_ie:
+            result = minimize_scalar(self.objective_eta,
+                                     bounds=[0.0, np.inf],
+                                     **options)
+            self.eta = result.x
+
+    def _fit_gamma(self, **options):
+        """Partial minimize gamma"""
+        if self.include_re:
+            result = minimize_scalar(self.objective_gamma,
+                                     bounds=[0.0, np.inf],
+                                     **options)
+            self.gamma = result.x
+
+    def _fit(self,
+             max_iter: int = 20,
+             tol: float = 1e-2,
+             verbose: bool = False,
+             beta_options: Optional[Dict] = None,
+             eta_options: Optional[Dict] = None,
+             gamma_options: Optional[Dict] = None):
+        """Model fitting function.
+
+        Parameters
+        ----------
+        max_iter : int, optional
+            Maximum number of iteration, by default 20.
+        tol : float, optional
+            Tolerance of convergence, by default 1e-2.
+        verbose : bool, optional
+            If True print out convergence information, by default False.
+        beta_options : Optional[Dict], optional
+            Optimizer options for beta, by default None.
+        eta_options : Optional[Dict], optional
+            Optimizer options for eta, by default None.
+        gamma_options : Optional[Dict], optional
+            Optimizer options for gamma, by default None.
+        """
+        counter = 0
+        error = 1.0
+
+        beta_options = {} if beta_options is None else beta_options
+        eta_options = {} if eta_options is None else eta_options
+        gamma_options = {} if gamma_options is None else gamma_options
+
+        x = np.hstack([self.beta, self.eta, self.gamma])
+        if verbose:
+            print(f"{counter=:3d}, obj={self.objective_beta(self.beta):.2e}, "
+                  f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
+
+        while error >= tol and counter <= max_iter:
+            counter += 1
+
+            self._fit_beta(**beta_options)
+            self._fit_eta(**eta_options)
+            self._fit_gamma(**gamma_options)
+
+            x_new = np.hstack([self.beta, self.eta, self.gamma])
+            error = np.max(np.abs(x_new - x))
+
+            if verbose:
+                print(f"{counter=:3d}, "
+                      f"obj={self.objective_beta(self.beta):.2e}, "
+                      f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
 
     def fit(self,
-            x0: Optional[np.ndarray] = None,
             outlier_pct: float = 0.0,
-            num_steps: int = 5,
+            trim_max_iter: int = 5,
+            trim_step_size: float = 1.0,
+            trim_tol: float = 1e-5,
+            trim_verbose: bool = False,
             **options):
         """Model fitting function.
 
         Parameters
         ----------
-        x0 : Optional[np.ndarray], optional
-            Initial input variable, by default None. If None, it will use all
-            one vector as the initial guess.
         outlier_pct : float, optional
-            Outlier percentage. Default to be 0.
-        num_steps : int, optional
-            Number of trimming steps. Default to be 5.
+            Outlier percentage, by default 0.0.
+        trim_max_iter : int, optional
+            Maximum trimming iteration, by default 5.
+        trim_step_size : float, optional
+            Trimming step size, by default 1.0.
+        trim_tol : float, optional
+            Trimming tolerance, by default 1e-5.
+        trim_verbose : bool, optional
+            If True, print out trimming convergence information, by default
+            False.
         """
-        self._fit(x0, **options)
+        self._fit(**options)
         outlier_pct = max(0.0, min(1.0, outlier_pct))
+        inlier_pct = 1 - outlier_pct
         if 0.0 < outlier_pct < 1.0:
-            num_outliers = int(self.data.num_obs*outlier_pct)
-            weights = np.linspace(1.0, 0.0, num_steps)
-            for weight in weights[1:]:
-                # update trimming weights
-                indices = np.argsort(self._objective(self.opt_vars))[::-1]
-                indices = indices[:num_outliers]
-                self.data.df["trim_weights"] = 1.0
-                self.data.df.loc[indices, "trim_weights"] = weight
-                self._fit(x0=self.opt_vars, **options)
+            num_inliers = int(self.data.num_obs*inlier_pct)
+            self.data.trim_weights = np.full(self.data.df.shape[0], inlier_pct)
+
+            w = self.data.trim_weights.copy()
+            trim_error = 1.0
+            trim_counter = 0
+
+            if trim_verbose:
+                print(f"{trim_counter=:3d}, "
+                      f"obj={self.objective_beta(self.beta):.2e}, "
+                      f"{trim_error=:.2e}")
+
+            while trim_error >= trim_tol and trim_counter <= trim_max_iter:
+                trim_counter += 1
+
+                trim_grad = self._objective()
+                self.data.trim_weights = proj_csimplex(
+                    w - trim_step_size*trim_grad, num_inliers
+                )
+
+                trim_error = np.linalg.norm(w - self.data.trim_weights)
+                w = self.data.trim_weights.copy()
+
+                if trim_verbose:
+                    print(f"{trim_counter=:3d}, "
+                          f"obj={self.objective_beta(self.beta):.2e}, "
+                          f"{trim_error=:.2e}")
+
+                self._fit(**options)
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         """Model predicting function.
@@ -417,7 +506,6 @@ class SFMAModel:
         np.ndarray
             Prediction of the frontier.
         """
-        beta, _, _ = self.get_vars(self.opt_vars)
         data_pred = self.data.copy()
         data_pred.attach_df(df)
-        return self.get_mat(data_pred).dot(beta)
+        return self.get_mat(data_pred).dot(self.beta)
