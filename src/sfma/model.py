@@ -421,7 +421,7 @@ class SFMAModel:
             print(f"{counter=:3d}, obj={self.objective_beta(self.beta):.2e}, "
                   f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
 
-        while error >= tol and counter <= max_iter:
+        while error >= tol and counter < max_iter:
             counter += 1
 
             self._fit_beta(**beta_options)
@@ -475,7 +475,7 @@ class SFMAModel:
                       f"obj={self.objective_beta(self.beta):.2e}, "
                       f"{trim_error=:.2e}")
 
-            while trim_error >= trim_tol and trim_counter <= trim_max_iter:
+            while trim_error >= trim_tol and trim_counter < trim_max_iter:
                 trim_counter += 1
 
                 trim_grad = self._objective()
