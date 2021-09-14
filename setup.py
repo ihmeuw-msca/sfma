@@ -19,7 +19,8 @@ if __name__ == '__main__':
         'pandas',
         'xspline',
         'anml',
-        'matplotlib'
+        'matplotlib',
+        'regmod'
     ]
 
     test_requirements = [
