@@ -491,6 +491,19 @@ class SFMAModel:
 
                 self._fit(**options)
 
+    def get_inefficiency(self) -> np.ndarray:
+        """Estimate inefficiency.
+
+        Returns
+        -------
+        np.ndarray
+            Array of inefficiency for given data.
+        """
+        r = self.data.obs - self.mat.dot(self.beta)
+        return np.maximum(
+            0.0, self.eta * r / (1 / self.data.weights + self.eta + self.gamma)
+        )
+
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         """Model predicting function.
 
