@@ -501,7 +501,7 @@ class SFMAModel:
         """
         r = self.data.obs - self.mat.dot(self.beta)
         return np.maximum(
-            0.0, self.eta * r / (1 / self.data.weights + self.eta + self.gamma)
+            0.0, -self.eta * r / (1 / self.data.weights + self.eta + self.gamma)
         )
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
