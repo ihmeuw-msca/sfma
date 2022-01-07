@@ -116,7 +116,7 @@ class IPSolver:
         float
             The step size in the given direction.
         """
-        c = 0.01
+        c = 0.1
         a = 1.0
         for i in [1, 2]:
             indices = dp[i] < 0.0
@@ -135,8 +135,7 @@ class IPSolver:
             gnorm_next = np.max(np.abs(np.hstack(f_next)))
             if gnorm_next <= (1 - c*a)*gnorm_curr:
                 break
-            a *= 0.9
-
+            a *= 0.5
         return a, p_next
 
     def minimize(self,
