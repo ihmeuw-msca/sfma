@@ -8,8 +8,9 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import LinearConstraint, minimize_scalar
 
-from sfma import Data, Parameter, Variable
-from sfma.solver import IPSolver, proj_csimplex
+from sfma import Data, Parameter, Variable, solver
+from sfma.solver import IPSolver, PGSolver, proj_csimplex
+from sfma.solver.projector import PolyProjector
 from sfma.utils import d2log_erfc, dlog_erfc, log_erfc
 
 
@@ -366,7 +367,12 @@ class SFMAModel:
             self.linear_uvec[1]
         )] if self.linear_uvec.size > 0 else []
 
-        solver = IPSolver(self.gradient_beta, self.hessian_beta, constraints[0])
+        # solver = IPSolver(self.gradient_beta, self.hessian_beta, constraints[0])
+        projector = PolyProjector(constraints[0])
+        solver = PGSolver(self.objective_beta,
+                          self.gradient_beta,
+                          self.hessian_beta,
+                          projector)
         self.beta = solver.minimize(beta0, **options)
 
     def _fit_eta(self, **options):
