@@ -351,6 +351,7 @@ class SFMAModel:
 
     def _fit_beta(self,
                   beta0: Optional[np.ndarray] = None,
+                  solver_type: str = "ip",
                   **options):
         """Partially minimize beta.
 
@@ -359,20 +360,29 @@ class SFMAModel:
         beta0 : Optional[np.ndarray], optional
             Initial guess of beta variable, by default None. When it is None,
             use `self.beta`.
+        solver_type: {'ip', 'pg'}, optional
+            Solver type, 'ip' stands for interior point solver and 'pg' stands
+            for projected gradient solver.
         """
         beta0 = self.beta.copy() if beta0 is None else beta0
-        constraints = [LinearConstraint(
+        constraint = LinearConstraint(
             self.linear_umat,
             self.linear_uvec[0],
             self.linear_uvec[1]
-        )] if self.linear_uvec.size > 0 else []
+        )
 
-        # solver = IPSolver(self.gradient_beta, self.hessian_beta, constraints[0])
-        projector = PolyProjector(constraints[0])
-        solver = PGSolver(self.objective_beta,
-                          self.gradient_beta,
-                          self.hessian_beta,
-                          projector)
+        if solver_type == "ip":
+            solver = IPSolver(self.gradient_beta,
+                              self.hessian_beta,
+                              constraint)
+        elif solver_type == "pg":
+            projector = PolyProjector(constraint)
+            solver = PGSolver(self.objective_beta,
+                              self.gradient_beta,
+                              self.hessian_beta,
+                              projector)
+        else:
+            raise ValueError("Unrecognized solver type, must be 'ip' or 'pg'.")
         self.beta = solver.minimize(beta0, **options)
 
     def _fit_eta(self, **options):
