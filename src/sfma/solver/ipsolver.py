@@ -6,6 +6,7 @@ Solver class solves large scale sparse least square problem with linear
 constraints.
 """
 from typing import Callable, List, Optional
+
 import numpy as np
 from scipy.optimize import LinearConstraint, brentq
 
@@ -222,27 +223,3 @@ class IPSolver:
                       f"{step=:.2e}, {mu=:.2e}")
 
         return p[0]
-
-
-def proj_csimplex(w: np.ndarray, h: int) -> np.ndarray:
-    """Project onto a capped simplex.
-
-    Parameters
-    ----------
-    w : np.ndarray
-        Vector to be projected.
-    h : int
-        Target sum of projected vector.
-
-    Returns
-    -------
-    np.ndarray
-        Projected vector.
-    """
-    a, b = np.min(w) - 1.0, np.max(w) - 0.0
-
-    def f(x):
-        return np.sum(np.maximum(np.minimum(w - x, 1.0), 0.0)) - h
-
-    x = brentq(f, a, b)
-    return np.maximum(np.minimum(w - x, 1.0), 0.0)
