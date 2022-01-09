@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import LinearConstraint, minimize_scalar
 
-from sfma import Data, Parameter, Variable, solver
-from sfma.solver import IPSolver, PGSolver, proj_csimplex
+from sfma import Data, Parameter, Variable
+from sfma.solver import IPSolver, PGSolver, SPSolver, proj_csimplex
 from sfma.solver.projector import PolyProjector
 from sfma.utils import d2log_erfc, dlog_erfc, log_erfc
 
@@ -360,7 +360,7 @@ class SFMAModel:
         beta0 : Optional[np.ndarray], optional
             Initial guess of beta variable, by default None. When it is None,
             use `self.beta`.
-        solver_type: {'ip', 'pg'}, optional
+        solver_type: {'ip', 'pg', 'sp'}, optional
             Solver type, 'ip' stands for interior point solver and 'pg' stands
             for projected gradient solver.
         """
@@ -381,6 +381,11 @@ class SFMAModel:
                               self.gradient_beta,
                               self.hessian_beta,
                               projector)
+        elif solver_type == "sp":
+            solver = SPSolver(self.objective_beta,
+                              self.gradient_beta,
+                              self.hessian_beta,
+                              [constraint])
         else:
             raise ValueError("Unrecognized solver type, must be 'ip' or 'pg'.")
         self.beta = solver.minimize(beta0, **options)

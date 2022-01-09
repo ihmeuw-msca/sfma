@@ -8,7 +8,7 @@ constraints.
 from typing import Callable, List, Optional
 
 import numpy as np
-from scipy.optimize import LinearConstraint, brentq
+from scipy.optimize import LinearConstraint
 
 
 class IPSolver:
