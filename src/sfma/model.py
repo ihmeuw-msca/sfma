@@ -438,7 +438,8 @@ class SFMAModel:
         x = np.hstack([self.beta, self.eta, self.gamma])
         if verbose:
             print(f"{counter=:3d}, obj={self.objective_beta(self.beta):.2e}, "
-                  f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
+                  f"eta={self.eta:.2e}, gamma={self.gamma:.2e}, "
+                  f"error={error:.2e}")
 
         while error >= tol and counter < max_iter:
             counter += 1
@@ -449,11 +450,13 @@ class SFMAModel:
 
             x_new = np.hstack([self.beta, self.eta, self.gamma])
             error = np.max(np.abs(x_new - x))
+            x = x_new
 
             if verbose:
                 print(f"{counter=:3d}, "
                       f"obj={self.objective_beta(self.beta):.2e}, "
-                      f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
+                      f"eta={self.eta:.2e}, gamma={self.gamma:.2e} "
+                      f"error={error:.2e}")
 
     def fit(self,
             outlier_pct: float = 0.0,
