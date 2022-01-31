@@ -9,7 +9,8 @@ import pandas as pd
 from scipy.optimize import LinearConstraint, minimize_scalar
 
 from sfma import Data, Parameter, Variable
-from sfma.solver import IPSolver, proj_csimplex
+from sfma.solver import IPSolver, PGSolver, SPSolver, proj_csimplex
+from sfma.solver.projector import PolyProjector
 from sfma.utils import d2log_erfc, dlog_erfc, log_erfc
 
 
@@ -350,6 +351,7 @@ class SFMAModel:
 
     def _fit_beta(self,
                   beta0: Optional[np.ndarray] = None,
+                  solver_type: str = "ip",
                   **options):
         """Partially minimize beta.
 
@@ -358,15 +360,34 @@ class SFMAModel:
         beta0 : Optional[np.ndarray], optional
             Initial guess of beta variable, by default None. When it is None,
             use `self.beta`.
+        solver_type: {'ip', 'pg', 'sp'}, optional
+            Solver type, 'ip' stands for interior point solver and 'pg' stands
+            for projected gradient solver.
         """
         beta0 = self.beta.copy() if beta0 is None else beta0
-        constraints = [LinearConstraint(
+        constraint = LinearConstraint(
             self.linear_umat,
             self.linear_uvec[0],
             self.linear_uvec[1]
-        )] if self.linear_uvec.size > 0 else []
+        )
 
-        solver = IPSolver(self.gradient_beta, self.hessian_beta, constraints[0])
+        if solver_type == "ip":
+            solver = IPSolver(self.gradient_beta,
+                              self.hessian_beta,
+                              constraint)
+        elif solver_type == "pg":
+            projector = PolyProjector(constraint)
+            solver = PGSolver(self.objective_beta,
+                              self.gradient_beta,
+                              self.hessian_beta,
+                              projector)
+        elif solver_type == "sp":
+            solver = SPSolver(self.objective_beta,
+                              self.gradient_beta,
+                              self.hessian_beta,
+                              [constraint])
+        else:
+            raise ValueError("Unrecognized solver type, must be 'ip' or 'pg'.")
         self.beta = solver.minimize(beta0, **options)
 
     def _fit_eta(self, **options):
@@ -417,7 +438,8 @@ class SFMAModel:
         x = np.hstack([self.beta, self.eta, self.gamma])
         if verbose:
             print(f"{counter=:3d}, obj={self.objective_beta(self.beta):.2e}, "
-                  f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
+                  f"eta={self.eta:.2e}, gamma={self.gamma:.2e}, "
+                  f"error={error:.2e}")
 
         while error >= tol and counter < max_iter:
             counter += 1
@@ -428,11 +450,13 @@ class SFMAModel:
 
             x_new = np.hstack([self.beta, self.eta, self.gamma])
             error = np.max(np.abs(x_new - x))
+            x = x_new
 
             if verbose:
                 print(f"{counter=:3d}, "
                       f"obj={self.objective_beta(self.beta):.2e}, "
-                      f"eta={self.eta:.2e}, gamma={self.gamma:.2e}")
+                      f"eta={self.eta:.2e}, gamma={self.gamma:.2e} "
+                      f"error={error:.2e}")
 
     def fit(self,
             outlier_pct: float = 0.0,
