@@ -50,6 +50,7 @@ class SFMAModel:
         # get all variables needed for the optmization
         self.mat = None
         self.constraint = None
+        self.weights = None
 
         # initialize the variables
         self.beta = np.ones(self.parameter.size)
@@ -127,7 +128,7 @@ class SFMAModel:
         float
             Objective value.
         """
-        return self.data.weights.value.dot(self._objective(beta=beta)) + \
+        return self.weights.dot(self._objective(beta=beta)) + \
             self.parameter.prior_objective(beta)
 
     def gradient_beta(self, beta: NDArray) -> NDArray:
@@ -151,7 +152,7 @@ class SFMAModel:
         dlr = -r/v
         dzr = dlog_erfc(z*r)
 
-        return self.mat.T.dot(self.data.weights.value*(dlr + dzr*z)) + \
+        return self.mat.T.dot(self.weights*(dlr + dzr*z)) + \
             self.parameter.prior_gradient(beta)
 
     def hessian_beta(self, beta: NDArray) -> NDArray:
@@ -167,7 +168,7 @@ class SFMAModel:
         NDArray
             Hessian matrix.
         """
-        w = self.data.weights.value
+        w = self.weights
 
         r = self.data.obs.value - self.mat.dot(beta)
         t = self.data.obs_se.value**2 + self.gamma
@@ -193,7 +194,7 @@ class SFMAModel:
         float
             Objective value.
         """
-        return self.data.weights.value.dot(self._objective(eta=eta))
+        return self.weights.dot(self._objective(eta=eta))
 
     def gradient_eta(self, eta: float) -> float:
         """Gradient value with repsect to eta.
@@ -217,7 +218,7 @@ class SFMAModel:
         dlv = 0.5*(-r**2/v**2 + 1/v)
         dze = 0.5*z*(1/eta - 1/v)
 
-        return self.data.weights.value.dot(dlv - dzr*r*dze)
+        return self.weights.dot(dlv - dzr*r*dze)
 
     def objective_gamma(self, gamma: float) -> float:
         """Objective value with respect to gamma.
@@ -232,7 +233,7 @@ class SFMAModel:
         float
             Objective value.
         """
-        return self.data.weights.value.dot(self._objective(gamma=gamma))
+        return self.weights.dot(self._objective(gamma=gamma))
 
     def gradient_gamma(self, gamma: float) -> float:
         """Gradient value with respect to gamma.
@@ -256,7 +257,7 @@ class SFMAModel:
         dlv = 0.5*(-r**2/v**2 + 1/v)
         dzg = 0.5*z*(-1/t - 1/v)
 
-        return self.data.weights.value.dot(dlv - dzr*r*dzg)
+        return self.weights.dot(dlv - dzr*r*dzg)
 
     def _fit_beta(self,
                   beta0: Optional[NDArray] = None,
@@ -296,6 +297,7 @@ class SFMAModel:
 
     def _fit_eta(self, **options):
         """Paratial minimize eta."""
+        options = {"method": "bounded", "bounds": [0.0, 1.0], **options}
         if self.include_ie:
             result = minimize_scalar(self.objective_eta,
                                      **options)
@@ -385,14 +387,14 @@ class SFMAModel:
             If True, print out trimming convergence information, by default
             False.
         """
-        self._fit(**options)
         outlier_pct = max(0.0, min(1.0, outlier_pct))
         inlier_pct = 1 - outlier_pct
         if 0.0 < outlier_pct < 1.0:
-            num_inliers = int(self.data.num_obs*inlier_pct)
-            self.data.weights.value = np.full(self.data.df.shape[0], inlier_pct)
+            num_obs = self.data.obs.value.size
+            num_inliers = int(num_obs*inlier_pct)
+            self.weights = np.full(num_obs, inlier_pct)
 
-            w = self.data.weights.value.copy()
+            w = self.weights.copy()
             trim_error = 1.0
             trim_counter = 0
 
@@ -405,12 +407,12 @@ class SFMAModel:
                 trim_counter += 1
 
                 trim_grad = self._objective()
-                self.data.weights.value = proj_csimplex(
+                self.weights = proj_csimplex(
                     w - trim_step_size*trim_grad, num_inliers
                 )
 
-                trim_error = np.linalg.norm(w - self.data.weights.value)
-                w = self.data.weights.value.copy()
+                trim_error = np.linalg.norm(w - self.weights)
+                w = self.weights.copy()
 
                 if trim_verbose:
                     print(f"{trim_counter=:3d}, "
@@ -418,6 +420,9 @@ class SFMAModel:
                           f"{trim_error=:.2e}")
 
                 self._fit(**options)
+        else:
+            self.weights = np.ones(self.data.obs.value.size)
+            self._fit(**options)
 
     def get_inefficiency(self) -> NDArray:
         """Estimate inefficiency.

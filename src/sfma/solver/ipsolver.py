@@ -5,7 +5,7 @@ Customized Interior Point Solver
 Solver class solves large scale sparse least square problem with linear
 constraints.
 """
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 import numpy as np
 from scipy.optimize import LinearConstraint
@@ -60,10 +60,12 @@ class IPSolver:
         self.linear_constraints = linear_constraints
 
         mat = self.linear_constraints.A
+        index = ~np.isclose(mat, 0.0).all(axis=1)
+        mat = mat[index]
         scale = np.abs(mat).max(axis=1)
         mat = mat / scale[:, np.newaxis]
-        lb = self.linear_constraints.lb / scale
-        ub = self.linear_constraints.ub / scale
+        lb = self.linear_constraints.lb[index] / scale
+        ub = self.linear_constraints.ub[index] / scale
 
         self.c_mat = np.vstack([-mat[~np.isneginf(lb)], mat[~np.isposinf(ub)]])
         self.c_vec = np.hstack([-lb[~np.isneginf(lb)], ub[~np.isposinf(ub)]])
