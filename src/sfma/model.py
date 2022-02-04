@@ -305,6 +305,7 @@ class SFMAModel:
 
     def _fit_gamma(self, **options):
         """Partial minimize gamma"""
+        options = {"method": "bounded", "bounds": [0.0, 1.0], **options}
         if self.include_re:
             result = minimize_scalar(self.objective_gamma,
                                      **options)
