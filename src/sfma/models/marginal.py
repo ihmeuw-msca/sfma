@@ -85,7 +85,8 @@ class MarginalModel(TrimmingCompatibleModel):
 
     @w.setter
     def w(self, weights: np.ndarray):
-        if any(weights < 0. or weights > 1.):
+        # import pdb; pdb.set_trace()
+        if any((weights < 0.) | (weights > 1.)):
             raise ValueError("Weights are not between 0 and 1.")
         self._w = weights
 
@@ -107,7 +108,7 @@ class MarginalModel(TrimmingCompatibleModel):
     def objective(self, x: ndarray, data: Data) -> float:
         obj = self._objective(x=x, data=data)
         if self.w is not None:
-            obj = self.w.dot(obj)
+            obj = self.w * obj
         return np.mean(obj)
 
     def _gradient(self, x: ndarray, data: Data) -> ndarray:

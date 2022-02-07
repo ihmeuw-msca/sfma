@@ -171,6 +171,7 @@ class SFMAModel:
         :param df: data frame to make predictions from
         :param true_frontier: np.ndarray where the first column is x's and second is y's
         """
+        # import pdb; pdb.set_trace()
         predictions = self.predict(df)
 
         fig, ax = plt.subplots(1, 1, figsize=(16, 8))
