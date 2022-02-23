@@ -64,12 +64,13 @@ class SFMAModel:
                             "Data.")
         self._data = data
 
-    @variables.setter
-    def variables(self, variables: List[Variable]):
-        if not all(isinstance(var, Variable) for var in variables):
-            raise TypeError(f"{type(self).__name__}.variables must be a list of"
-                            " instances of Variable.")
-        self._variables = list(variables)
+    def get_beta_dict(self) -> Dict[str, NDArray]:
+        sizes = [variable.size for variable in self.parameter.variables]
+        betas = np.split(self.beta, np.cumsum(sizes)[:-1])
+        return {
+            variable.component.key: betas[i]
+            for i, variable in enumerate(self.parameter.variables)
+        }
 
     def attach(self, df: DataFrame):
         self.data.attach(df)
