@@ -313,7 +313,7 @@ class SFMAModel:
                 self.cvec
             )
         result = solver.minimize(beta0, **options)
-        return result.x
+        self.beta = result.x
 
     def _fit_eta(self, **options):
         """Paratial minimize eta."""
