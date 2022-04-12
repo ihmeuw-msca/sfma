@@ -1,3 +1,5 @@
+import datetime
+
 __all__ = [
     "__title__", "__summary__", "__uri__", "__version__", "__author__",
     "__email__", "__license__", "__copyright__",
@@ -13,4 +15,4 @@ __author__ = "IHME Math Sciences"
 __email__ = "ihme.math.sciences@gmail.com"
 
 __license__ = "BSD 2-Clause License"
-__copyright__ = f"Copyright 2021 {__author__}"
+__copyright__ = f"{datetime.date.today().year} {__author__}"
