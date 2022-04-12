@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from anml.parameter.main import Parameter
 from anml.variable.main import Variable
+from msca.c2fun import logerfc
 from numpy.typing import NDArray
 from pandas import DataFrame
 from scipy.optimize import LinearConstraint, minimize_scalar
@@ -15,7 +16,6 @@ from scipy.optimize import LinearConstraint, minimize_scalar
 from sfma.data import Data
 from sfma.solver import IPSolver, PGSolver, SPSolver, proj_csimplex
 from sfma.solver.projector import PolyProjector
-from sfma.utils import d2log_erfc, dlog_erfc, log_erfc
 
 
 class SFMAModel:
@@ -41,7 +41,8 @@ class SFMAModel:
                  data: Data,
                  variables: List[Variable],
                  include_ie: bool = True,
-                 include_re: bool = False):
+                 include_re: bool = False,
+                 df: Optional[DataFrame] = None):
         self.data = data
         self.parameter = Parameter(variables)
         self.include_ie = include_ie
@@ -56,6 +57,9 @@ class SFMAModel:
         self.beta = np.ones(self.parameter.size)
         self.eta = float(include_ie)
         self.gamma = float(include_re)
+
+        if df is not None:
+            self.attach(df)
 
     @data.setter
     def data(self, data: Data):
@@ -77,6 +81,8 @@ class SFMAModel:
         self.parameter.attach(df)
         if self.mat is None:
             self.mat = self.parameter.design_mat
+        if self.weights is None:
+            self.weights = np.ones(df.shape[0])
         if self.constraint is None:
             prior = self.parameter.prior_dict["linear"]["UniformPrior"]
             mat, vec = prior.mat, prior.params
@@ -114,7 +120,7 @@ class SFMAModel:
         v = t + eta
         z = np.sqrt(eta)/np.sqrt(2*v*t)
 
-        return 0.5*(r**2/v) + 0.5*np.log(2*np.pi*v) - log_erfc(z*r)
+        return 0.5*(r**2/v) + 0.5*np.log(2*np.pi*v) - logerfc(z*r)
 
     def objective_beta(self, beta: NDArray) -> float:
         """Objective value with respect to beta.
@@ -151,7 +157,7 @@ class SFMAModel:
         z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
         dlr = -r/v
-        dzr = dlog_erfc(z*r)
+        dzr = logerfc(z*r, order=1)
 
         return self.mat.T.dot(self.weights*(dlr + dzr*z)) + \
             self.parameter.prior_gradient(beta)
@@ -177,7 +183,7 @@ class SFMAModel:
         z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
         d2lr = 1/v
-        d2zr = d2log_erfc(z*r)
+        d2zr = logerfc(z*r, order=2)
 
         return (self.mat.T*(w*(d2lr - d2zr*z**2))).dot(self.mat) + \
             self.parameter.prior_hessian(beta)
@@ -215,7 +221,7 @@ class SFMAModel:
         v = t + eta
         z = np.sqrt(eta)/np.sqrt(2*v*t)
 
-        dzr = dlog_erfc(z*r)
+        dzr = logerfc(z*r, order=1)
         dlv = 0.5*(-r**2/v**2 + 1/v)
         dze = 0.5*z*(1/eta - 1/v)
 
@@ -254,7 +260,7 @@ class SFMAModel:
         v = t + self.eta
         z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
-        dzr = dlog_erfc(z*r)
+        dzr = logerfc(z*r, order=1)
         dlv = 0.5*(-r**2/v**2 + 1/v)
         dzg = 0.5*z*(-1/t - 1/v)
 
