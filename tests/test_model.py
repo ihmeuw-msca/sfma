@@ -76,10 +76,7 @@ def test_gprior(data, variables, df):
 
 def test_uprior(data, variables, df):
     model = SFMAModel(data, variables, True, True, df=df)
-    linear_uvec = np.vstack([model.constraint.lb, model.constraint.ub])
-    assert np.allclose(linear_uvec,
-                       np.array([[-np.inf, 0.0],
-                                 [np.inf, 1.0]]))
+    assert np.allclose(model.cvec, np.array([0.0, 1.0]))
 
 
 @pytest.mark.parametrize("beta", [np.arange(2)*1.0, np.ones(2)])
