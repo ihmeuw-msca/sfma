@@ -5,9 +5,10 @@ Customized Interior Point Solver
 Solver class solves large scale sparse least square problem with linear
 constraints.
 """
-from typing import Callable, List, Optional
+from typing import Callable, List
+
 import numpy as np
-from scipy.optimize import LinearConstraint, brentq
+from scipy.optimize import LinearConstraint
 
 
 class IPSolver:
@@ -53,22 +54,21 @@ class IPSolver:
     def __init__(self,
                  grad: Callable,
                  hess: Callable,
-                 linear_constraints: Optional[LinearConstraint] = None):
+                 linear_constraints: LinearConstraint):
         self.grad = grad
         self.hess = hess
         self.linear_constraints = linear_constraints
-        self.c_mat = None
-        self.c_vec = None
 
-        if self.linear_constraints is not None:
-            mat = self.linear_constraints.A
-            lb = self.linear_constraints.lb
-            ub = self.linear_constraints.ub
+        mat = self.linear_constraints.A
+        index = ~np.isclose(mat, 0.0).all(axis=1)
+        mat = mat[index]
+        scale = np.abs(mat).max(axis=1)
+        mat = mat / scale[:, np.newaxis]
+        lb = self.linear_constraints.lb[index] / scale
+        ub = self.linear_constraints.ub[index] / scale
 
-            self.c_mat = np.vstack([-mat[~np.isneginf(lb)],
-                                    mat[~np.isposinf(ub)]])
-            self.c_vec = np.hstack([-lb[~np.isneginf(lb)],
-                                    ub[~np.isposinf(ub)]])
+        self.c_mat = np.vstack([-mat[~np.isneginf(lb)], mat[~np.isposinf(ub)]])
+        self.c_vec = np.hstack([-lb[~np.isneginf(lb)], ub[~np.isposinf(ub)]])
 
     def get_kkt(self,
                 p: List[np.ndarray],
@@ -135,16 +135,17 @@ class IPSolver:
             if gnorm_next <= (1 - c*a)*gnorm_curr:
                 break
             a *= 0.9
-
         return a, p_next
 
     def minimize(self,
                  x0: np.ndarray,
                  xtol: float = 1e-8,
                  gtol: float = 1e-8,
+                 mtol: float = 1e-6,
                  max_iter: int = 100,
                  mu: float = 1.0,
-                 scale_mu: float = 0.1,
+                 update_mu_every: int = 5,
+                 scale_mu: float = 0.5,
                  verbose: bool = False) -> np.ndarray:
         """Minimize optimization objective over constraints.
 
@@ -189,7 +190,8 @@ class IPSolver:
             print(f"{counter=:3d}, {gnorm=:.2e}, {xdiff=:.2e}, {step=:.2e}, "
                   f"{mu=:.2e}")
 
-        while (gnorm > gtol) and (xdiff > xtol) and (counter < max_iter):
+        while ((gnorm > gtol and xdiff > xtol and counter < max_iter) or
+               (mu > mtol)):
             counter += 1
 
             # cache convenient variables
@@ -210,7 +212,8 @@ class IPSolver:
             step, p = self.update_params(p, dp, mu)
 
             # update mu
-            mu = scale_mu*p[1].dot(p[2])/len(p[1])
+            if counter % update_mu_every == 0:
+                mu = max(scale_mu*mu, 0.1*p[1].dot(p[2])/len(p[1]))
 
             # update f and gnorm
             f = self.get_kkt(p, mu)
@@ -222,27 +225,3 @@ class IPSolver:
                       f"{step=:.2e}, {mu=:.2e}")
 
         return p[0]
-
-
-def proj_csimplex(w: np.ndarray, h: int) -> np.ndarray:
-    """Project onto a capped simplex.
-
-    Parameters
-    ----------
-    w : np.ndarray
-        Vector to be projected.
-    h : int
-        Target sum of projected vector.
-
-    Returns
-    -------
-    np.ndarray
-        Projected vector.
-    """
-    a, b = np.min(w) - 1.0, np.max(w) - 0.0
-
-    def f(x):
-        return np.sum(np.maximum(np.minimum(w - x, 1.0), 0.0)) - h
-
-    x = brentq(f, a, b)
-    return np.maximum(np.minimum(w - x, 1.0), 0.0)

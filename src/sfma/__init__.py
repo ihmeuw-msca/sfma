@@ -1,12 +1,9 @@
-from regmod.data import Data
-from regmod.variable import Variable, SplineVariable
-from regmod.parameter import Parameter
-from regmod.prior import (Prior,
-                          LinearPrior,
-                          GaussianPrior,
-                          UniformPrior,
-                          SplineGaussianPrior,
-                          SplineUniformPrior,
-                          LinearGaussianPrior,
-                          LinearUniformPrior)
-from regmod.utils import SplineSpecs
+from anml.getter.prior import SplinePriorGetter
+from anml.getter.spline import SplineGetter
+from anml.parameter.main import Parameter
+from anml.prior.main import GaussianPrior, UniformPrior
+from anml.variable.main import Variable
+from anml.variable.spline import SplineVariable
+
+from sfma.data import Data
+from sfma.model import SFMAModel
