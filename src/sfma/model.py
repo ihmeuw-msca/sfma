@@ -8,14 +8,15 @@ import numpy as np
 import pandas as pd
 from anml.parameter.main import Parameter
 from anml.variable.main import Variable
+from msca.c2fun import logerfc
+from msca.linalg.matrix import asmatrix
+from msca.optim.prox import proj_capped_simplex
+from msca.optim.solver import IPSolver, NTSolver
 from numpy.typing import NDArray
 from pandas import DataFrame
-from scipy.optimize import LinearConstraint, minimize_scalar
+from scipy.optimize import minimize_scalar
 
 from sfma.data import Data
-from sfma.solver import IPSolver, PGSolver, SPSolver, proj_csimplex
-from sfma.solver.projector import PolyProjector
-from sfma.utils import d2log_erfc, dlog_erfc, log_erfc
 
 
 class SFMAModel:
@@ -41,7 +42,8 @@ class SFMAModel:
                  data: Data,
                  variables: List[Variable],
                  include_ie: bool = True,
-                 include_re: bool = False):
+                 include_re: bool = False,
+                 df: Optional[DataFrame] = None):
         self.data = data
         self.parameter = Parameter(variables)
         self.include_ie = include_ie
@@ -49,13 +51,17 @@ class SFMAModel:
 
         # get all variables needed for the optmization
         self.mat = None
-        self.constraint = None
+        self.cmat = None
+        self.cvec = None
         self.weights = None
 
         # initialize the variables
         self.beta = np.ones(self.parameter.size)
         self.eta = float(include_ie)
         self.gamma = float(include_re)
+
+        if df is not None:
+            self.attach(df)
 
     @data.setter
     def data(self, data: Data):
@@ -76,14 +82,30 @@ class SFMAModel:
         self.data.attach(df)
         self.parameter.attach(df)
         if self.mat is None:
-            self.mat = self.parameter.design_mat
-        if self.constraint is None:
+            self.mat = asmatrix(self.parameter.design_mat)
+        if self.weights is None:
+            self.weights = np.ones(df.shape[0])
+        if (self.cmat is None) or (self.cvec is None):
             prior = self.parameter.prior_dict["linear"]["UniformPrior"]
             mat, vec = prior.mat, prior.params
             prior = self.parameter.prior_dict["direct"]["UniformPrior"]
-            mat = np.vstack([mat, np.identity(self.parameter.size)])
-            vec = np.hstack([vec, prior.params])
-            self.constraint = LinearConstraint(mat, vec[0], vec[1])
+            cmat = np.vstack([mat, np.identity(self.parameter.size)])
+            cvec = np.hstack([vec, prior.params])
+
+            index = ~np.isclose(cmat, 0.0).all(axis=1)
+            cmat = cmat[index]
+            cvec = cvec[:, index]
+
+            scale = np.abs(cmat).max(axis=1)
+            cmat = cmat / scale[:, np.newaxis]
+            cvec = cvec / scale
+
+            self.cmat = asmatrix(np.vstack([
+                -cmat[~np.isneginf(cvec[0])], cmat[~np.isposinf(cvec[1])]
+            ]))
+            self.cvec = np.hstack([
+                -cvec[0][~np.isneginf(cvec[0])], cvec[1][~np.isposinf(cvec[1])]
+            ])
 
     def _objective(self,
                    beta: Optional[NDArray] = None,
@@ -114,7 +136,7 @@ class SFMAModel:
         v = t + eta
         z = np.sqrt(eta)/np.sqrt(2*v*t)
 
-        return 0.5*(r**2/v) + 0.5*np.log(2*np.pi*v) - log_erfc(z*r)
+        return 0.5*(r**2/v) + 0.5*np.log(2*np.pi*v) - logerfc(z*r)
 
     def objective_beta(self, beta: NDArray) -> float:
         """Objective value with respect to beta.
@@ -151,7 +173,7 @@ class SFMAModel:
         z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
         dlr = -r/v
-        dzr = dlog_erfc(z*r)
+        dzr = logerfc(z*r, order=1)
 
         return self.mat.T.dot(self.weights*(dlr + dzr*z)) + \
             self.parameter.prior_gradient(beta)
@@ -177,7 +199,7 @@ class SFMAModel:
         z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
         d2lr = 1/v
-        d2zr = d2log_erfc(z*r)
+        d2zr = logerfc(z*r, order=2)
 
         return (self.mat.T*(w*(d2lr - d2zr*z**2))).dot(self.mat) + \
             self.parameter.prior_hessian(beta)
@@ -215,7 +237,7 @@ class SFMAModel:
         v = t + eta
         z = np.sqrt(eta)/np.sqrt(2*v*t)
 
-        dzr = dlog_erfc(z*r)
+        dzr = logerfc(z*r, order=1)
         dlv = 0.5*(-r**2/v**2 + 1/v)
         dze = 0.5*z*(1/eta - 1/v)
 
@@ -254,7 +276,7 @@ class SFMAModel:
         v = t + self.eta
         z = np.sqrt(self.eta)/np.sqrt(2*v*t)
 
-        dzr = dlog_erfc(z*r)
+        dzr = logerfc(z*r, order=1)
         dlv = 0.5*(-r**2/v**2 + 1/v)
         dzg = 0.5*z*(-1/t - 1/v)
 
@@ -262,7 +284,6 @@ class SFMAModel:
 
     def _fit_beta(self,
                   beta0: Optional[NDArray] = None,
-                  solver_type: str = "ip",
                   **options):
         """Partially minimize beta.
 
@@ -275,26 +296,24 @@ class SFMAModel:
             Solver type, 'ip' stands for interior point solver and 'pg' stands
             for projected gradient solver.
         """
-        beta0 = self.beta.copy() if beta0 is None else beta0
+        beta0 = beta0 or self.beta.copy()
 
-        if solver_type == "ip":
-            solver = IPSolver(self.gradient_beta,
-                              self.hessian_beta,
-                              self.constraint)
-        elif solver_type == "pg":
-            projector = PolyProjector(self.constraint)
-            solver = PGSolver(self.objective_beta,
-                              self.gradient_beta,
-                              self.hessian_beta,
-                              projector)
-        elif solver_type == "sp":
-            solver = SPSolver(self.objective_beta,
-                              self.gradient_beta,
-                              self.hessian_beta,
-                              [self.constraint])
+        if self.cmat.size == 0:
+            solver = NTSolver(
+                self.objective_beta,
+                self.gradient_beta,
+                self.hessian_beta,
+            )
         else:
-            raise ValueError("Unrecognized solver type, must be 'ip' or 'pg'.")
-        self.beta = solver.minimize(beta0, **options)
+            solver = IPSolver(
+                self.objective_beta,
+                self.gradient_beta,
+                self.hessian_beta,
+                self.cmat,
+                self.cvec
+            )
+        result = solver.minimize(beta0, **options)
+        self.beta = result.x
 
     def _fit_eta(self, **options):
         """Paratial minimize eta."""
@@ -409,7 +428,7 @@ class SFMAModel:
                 trim_counter += 1
 
                 trim_grad = self._objective()
-                self.weights = proj_csimplex(
+                self.weights = proj_capped_simplex(
                     w - trim_step_size*trim_grad, num_inliers
                 )
 
