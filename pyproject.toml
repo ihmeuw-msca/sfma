@@ -22,6 +22,7 @@ dependencies = [
     "matplotlib",
     "msca",
     "xspline==0.0.7",
+    "numpy<2.0.0"
 ]
 
 [project.optional-dependencies]
