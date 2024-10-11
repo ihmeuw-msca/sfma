@@ -5,8 +5,16 @@ from scipy import stats
 
 
 class Simulator:
-    def __init__(self, nu: int, gamma: int, sigma_min: float, sigma_max: float,
-                 x: callable, func: callable, ineff_dist: str = 'half-normal'):
+    def __init__(
+        self,
+        nu: int,
+        gamma: int,
+        sigma_min: float,
+        sigma_max: float,
+        x: callable,
+        func: callable,
+        ineff_dist: str = "half-normal",
+    ):
         """
         Simulation class for stochastic frontier meta-analysis.
 
@@ -31,17 +39,21 @@ class Simulator:
         self.x = x
         self.func = func
 
-        if ineff_dist == 'half-normal':
+        if ineff_dist == "half-normal":
             self.rvs = halfnorm.rvs
-        elif ineff_dist == 'exponential':
+        elif ineff_dist == "exponential":
             self.rvs = expon.rvs
         else:
-            raise RuntimeError("Inefficiency distribution must be half-normal or exponential")
+            raise RuntimeError(
+                "Inefficiency distribution must be half-normal or exponential"
+            )
 
     def simulate(self, n: int = 1, seed=None, **kwargs):
         if seed is not None:
             np.random.seed(seed)
-        sigma = stats.uniform.rvs(loc=self.sigma_min, scale=self.sigma_max, size=n)
+        sigma = stats.uniform.rvs(
+            loc=self.sigma_min, scale=self.sigma_max, size=n
+        )
         epsilon = stats.norm.rvs(loc=0, scale=sigma, size=n)
 
         us = stats.norm.rvs(loc=0, scale=self.gamma, size=n)

@@ -1,6 +1,7 @@
 """
 Model class with all information to fit and predict the frontier.
 """
+
 from operator import attrgetter
 from typing import Dict, List, Optional
 
@@ -38,12 +39,14 @@ class SFMAModel:
     data = property(attrgetter("_data"))
     variables = property(attrgetter("_variables"))
 
-    def __init__(self,
-                 data: Data,
-                 variables: List[Variable],
-                 include_ie: bool = True,
-                 include_re: bool = False,
-                 df: Optional[DataFrame] = None):
+    def __init__(
+        self,
+        data: Data,
+        variables: List[Variable],
+        include_ie: bool = True,
+        include_re: bool = False,
+        df: Optional[DataFrame] = None,
+    ):
         self.data = data
         self.parameter = Parameter(variables)
         self.include_ie = include_ie
@@ -66,8 +69,9 @@ class SFMAModel:
     @data.setter
     def data(self, data: Data):
         if not isinstance(data, Data):
-            raise TypeError(f"{type(self).__name__}.data must be instance of "
-                            "Data.")
+            raise TypeError(
+                f"{type(self).__name__}.data must be instance of " "Data."
+            )
         self._data = data
 
     def get_beta_dict(self) -> Dict[str, NDArray]:
@@ -100,17 +104,24 @@ class SFMAModel:
             cmat = cmat / scale[:, np.newaxis]
             cvec = cvec / scale
 
-            self.cmat = asmatrix(np.vstack([
-                -cmat[~np.isneginf(cvec[0])], cmat[~np.isposinf(cvec[1])]
-            ]))
-            self.cvec = np.hstack([
-                -cvec[0][~np.isneginf(cvec[0])], cvec[1][~np.isposinf(cvec[1])]
-            ])
+            self.cmat = asmatrix(
+                np.vstack(
+                    [-cmat[~np.isneginf(cvec[0])], cmat[~np.isposinf(cvec[1])]]
+                )
+            )
+            self.cvec = np.hstack(
+                [
+                    -cvec[0][~np.isneginf(cvec[0])],
+                    cvec[1][~np.isposinf(cvec[1])],
+                ]
+            )
 
-    def _objective(self,
-                   beta: Optional[NDArray] = None,
-                   eta: Optional[float] = None,
-                   gamma: Optional[float] = None) -> NDArray:
+    def _objective(
+        self,
+        beta: Optional[NDArray] = None,
+        eta: Optional[float] = None,
+        gamma: Optional[float] = None,
+    ) -> NDArray:
         """Objective function for each data point.
 
         Parameters
@@ -134,9 +145,9 @@ class SFMAModel:
         r = self.data.obs.value - self.mat.dot(beta)
         t = self.data.obs_se.value**2 + gamma
         v = t + eta
-        z = np.sqrt(eta)/np.sqrt(2*v*t)
+        z = np.sqrt(eta) / np.sqrt(2 * v * t)
 
-        return 0.5*(r**2/v) + 0.5*np.log(2*np.pi*v) - logerfc(z*r)
+        return 0.5 * (r**2 / v) + 0.5 * np.log(2 * np.pi * v) - logerfc(z * r)
 
     def objective_beta(self, beta: NDArray) -> float:
         """Objective value with respect to beta.
@@ -151,8 +162,9 @@ class SFMAModel:
         float
             Objective value.
         """
-        return self.weights.dot(self._objective(beta=beta)) + \
-            self.parameter.prior_objective(beta)
+        return self.weights.dot(
+            self._objective(beta=beta)
+        ) + self.parameter.prior_objective(beta)
 
     def gradient_beta(self, beta: NDArray) -> NDArray:
         """Gradient vector with respect to beta.
@@ -170,13 +182,14 @@ class SFMAModel:
         r = self.data.obs.value - self.mat.dot(beta)
         t = self.data.obs_se.value**2 + self.gamma
         v = t + self.eta
-        z = np.sqrt(self.eta)/np.sqrt(2*v*t)
+        z = np.sqrt(self.eta) / np.sqrt(2 * v * t)
 
-        dlr = -r/v
-        dzr = logerfc(z*r, order=1)
+        dlr = -r / v
+        dzr = logerfc(z * r, order=1)
 
-        return self.mat.T.dot(self.weights*(dlr + dzr*z)) + \
-            self.parameter.prior_gradient(beta)
+        return self.mat.T.dot(
+            self.weights * (dlr + dzr * z)
+        ) + self.parameter.prior_gradient(beta)
 
     def hessian_beta(self, beta: NDArray) -> NDArray:
         """Hessian matrix with respect to beta.
@@ -196,13 +209,14 @@ class SFMAModel:
         r = self.data.obs.value - self.mat.dot(beta)
         t = self.data.obs_se.value**2 + self.gamma
         v = t + self.eta
-        z = np.sqrt(self.eta)/np.sqrt(2*v*t)
+        z = np.sqrt(self.eta) / np.sqrt(2 * v * t)
 
-        d2lr = 1/v
-        d2zr = logerfc(z*r, order=2)
+        d2lr = 1 / v
+        d2zr = logerfc(z * r, order=2)
 
-        return (self.mat.T*(w*(d2lr - d2zr*z**2))).dot(self.mat) + \
-            self.parameter.prior_hessian(beta)
+        return (self.mat.T * (w * (d2lr - d2zr * z**2))).dot(
+            self.mat
+        ) + self.parameter.prior_hessian(beta)
 
     def objective_eta(self, eta: float) -> float:
         """Objective value with respect to eta.
@@ -235,13 +249,13 @@ class SFMAModel:
         r = self.data.obs.value - self.mat.dot(self.beta)
         t = self.data.obs_se.value**2 + self.gamma
         v = t + eta
-        z = np.sqrt(eta)/np.sqrt(2*v*t)
+        z = np.sqrt(eta) / np.sqrt(2 * v * t)
 
-        dzr = logerfc(z*r, order=1)
-        dlv = 0.5*(-r**2/v**2 + 1/v)
-        dze = 0.5*z*(1/eta - 1/v)
+        dzr = logerfc(z * r, order=1)
+        dlv = 0.5 * (-(r**2) / v**2 + 1 / v)
+        dze = 0.5 * z * (1 / eta - 1 / v)
 
-        return self.weights.dot(dlv - dzr*r*dze)
+        return self.weights.dot(dlv - dzr * r * dze)
 
     def objective_gamma(self, gamma: float) -> float:
         """Objective value with respect to gamma.
@@ -274,17 +288,15 @@ class SFMAModel:
         r = self.data.obs.value - self.mat.dot(self.beta)
         t = self.data.obs_se.value**2 + gamma
         v = t + self.eta
-        z = np.sqrt(self.eta)/np.sqrt(2*v*t)
+        z = np.sqrt(self.eta) / np.sqrt(2 * v * t)
 
-        dzr = logerfc(z*r, order=1)
-        dlv = 0.5*(-r**2/v**2 + 1/v)
-        dzg = 0.5*z*(-1/t - 1/v)
+        dzr = logerfc(z * r, order=1)
+        dlv = 0.5 * (-(r**2) / v**2 + 1 / v)
+        dzg = 0.5 * z * (-1 / t - 1 / v)
 
-        return self.weights.dot(dlv - dzr*r*dzg)
+        return self.weights.dot(dlv - dzr * r * dzg)
 
-    def _fit_beta(self,
-                  beta0: Optional[NDArray] = None,
-                  **options):
+    def _fit_beta(self, beta0: Optional[NDArray] = None, **options):
         """Partially minimize beta.
 
         Parameters
@@ -310,7 +322,7 @@ class SFMAModel:
                 self.gradient_beta,
                 self.hessian_beta,
                 self.cmat,
-                self.cvec
+                self.cvec,
             )
         result = solver.minimize(beta0, **options)
         self.beta = result.x
@@ -319,25 +331,25 @@ class SFMAModel:
         """Paratial minimize eta."""
         options = {"method": "bounded", "bounds": [0.0, 1.0], **options}
         if self.include_ie:
-            result = minimize_scalar(self.objective_eta,
-                                     **options)
+            result = minimize_scalar(self.objective_eta, **options)
             self.eta = result.x
 
     def _fit_gamma(self, **options):
         """Partial minimize gamma"""
         options = {"method": "bounded", "bounds": [0.0, 1.0], **options}
         if self.include_re:
-            result = minimize_scalar(self.objective_gamma,
-                                     **options)
+            result = minimize_scalar(self.objective_gamma, **options)
             self.gamma = result.x
 
-    def _fit(self,
-             max_iter: int = 20,
-             tol: float = 1e-2,
-             verbose: bool = False,
-             beta_options: Optional[Dict] = None,
-             eta_options: Optional[Dict] = None,
-             gamma_options: Optional[Dict] = None):
+    def _fit(
+        self,
+        max_iter: int = 20,
+        tol: float = 1e-2,
+        verbose: bool = False,
+        beta_options: Optional[Dict] = None,
+        eta_options: Optional[Dict] = None,
+        gamma_options: Optional[Dict] = None,
+    ):
         """Model fitting function.
 
         Parameters
@@ -364,9 +376,11 @@ class SFMAModel:
 
         x = np.hstack([self.beta, self.eta, self.gamma])
         if verbose:
-            print(f"{counter=:3d}, obj={self.objective_beta(self.beta):.2e}, "
-                  f"eta={self.eta:.2e}, gamma={self.gamma:.2e}, "
-                  f"error={error:.2e}")
+            print(
+                f"{counter=:3d}, obj={self.objective_beta(self.beta):.2e}, "
+                f"eta={self.eta:.2e}, gamma={self.gamma:.2e}, "
+                f"error={error:.2e}"
+            )
 
         while error >= tol and counter < max_iter:
             counter += 1
@@ -380,18 +394,22 @@ class SFMAModel:
             x = x_new
 
             if verbose:
-                print(f"{counter=:3d}, "
-                      f"obj={self.objective_beta(self.beta):.2e}, "
-                      f"eta={self.eta:.2e}, gamma={self.gamma:.2e} "
-                      f"error={error:.2e}")
+                print(
+                    f"{counter=:3d}, "
+                    f"obj={self.objective_beta(self.beta):.2e}, "
+                    f"eta={self.eta:.2e}, gamma={self.gamma:.2e} "
+                    f"error={error:.2e}"
+                )
 
-    def fit(self,
-            outlier_pct: float = 0.0,
-            trim_max_iter: int = 5,
-            trim_step_size: float = 1.0,
-            trim_tol: float = 1e-5,
-            trim_verbose: bool = False,
-            **options):
+    def fit(
+        self,
+        outlier_pct: float = 0.0,
+        trim_max_iter: int = 5,
+        trim_step_size: float = 1.0,
+        trim_tol: float = 1e-5,
+        trim_verbose: bool = False,
+        **options,
+    ):
         """Model fitting function.
 
         Parameters
@@ -412,7 +430,7 @@ class SFMAModel:
         inlier_pct = 1 - outlier_pct
         if 0.0 < outlier_pct < 1.0:
             num_obs = self.data.obs.value.size
-            num_inliers = int(num_obs*inlier_pct)
+            num_inliers = int(num_obs * inlier_pct)
             self.weights = np.full(num_obs, inlier_pct)
 
             w = self.weights.copy()
@@ -420,25 +438,29 @@ class SFMAModel:
             trim_counter = 0
 
             if trim_verbose:
-                print(f"{trim_counter=:3d}, "
-                      f"obj={self.objective_beta(self.beta):.2e}, "
-                      f"{trim_error=:.2e}")
+                print(
+                    f"{trim_counter=:3d}, "
+                    f"obj={self.objective_beta(self.beta):.2e}, "
+                    f"{trim_error=:.2e}"
+                )
 
             while trim_error >= trim_tol and trim_counter < trim_max_iter:
                 trim_counter += 1
 
                 trim_grad = self._objective()
                 self.weights = proj_capped_simplex(
-                    w - trim_step_size*trim_grad, num_inliers
+                    w - trim_step_size * trim_grad, num_inliers
                 )
 
                 trim_error = np.linalg.norm(w - self.weights)
                 w = self.weights.copy()
 
                 if trim_verbose:
-                    print(f"{trim_counter=:3d}, "
-                          f"obj={self.objective_beta(self.beta):.2e}, "
-                          f"{trim_error=:.2e}")
+                    print(
+                        f"{trim_counter=:3d}, "
+                        f"obj={self.objective_beta(self.beta):.2e}, "
+                        f"{trim_error=:.2e}"
+                    )
 
                 self._fit(**options)
         else:
@@ -455,8 +477,8 @@ class SFMAModel:
         """
         r = self.data.obs.value - self.mat.dot(self.beta)
         return np.maximum(
-            0.0, -self.eta * r / (self.data.obs_se.value**2 +
-                                  self.eta + self.gamma)
+            0.0,
+            -self.eta * r / (self.data.obs_se.value**2 + self.eta + self.gamma),
         )
 
     def predict(self, df: pd.DataFrame) -> NDArray:

@@ -1,6 +1,7 @@
 """
 Test the model module
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -11,32 +12,34 @@ from sfma.model import SFMAModel
 def ad_jacobian(fun, x, out_shape=(), eps=1e-10):
     c = x + 0j
     if np.isscalar(x):
-        g = fun(x + eps*1j).imag/eps
+        g = fun(x + eps * 1j).imag / eps
     else:
         g = np.zeros((*out_shape, *x.shape))
         if len(out_shape) == 0:
             for i in np.ndindex(x.shape):
-                c[i] += eps*1j
-                g[i] = fun(c).imag/eps
-                c[i] -= eps*1j
+                c[i] += eps * 1j
+                g[i] = fun(c).imag / eps
+                c[i] -= eps * 1j
         else:
             for j in np.ndindex(out_shape):
                 for i in np.ndindex(x.shape):
-                    c[i] += eps*1j
-                    g[j][i] = fun(c)[j].imag/eps
-                    c[i] -= eps*1j
+                    c[i] += eps * 1j
+                    g[j][i] = fun(c)[j].imag / eps
+                    c[i] -= eps * 1j
     return g
 
 
 @pytest.fixture
 def df():
     np.random.seed(123)
-    return pd.DataFrame({
-        "obs": np.random.randn(10),
-        "obs_se": 0.2 + np.random.rand(10),
-        "var": np.random.randn(10),
-        "intercept": 1.0,
-    })
+    return pd.DataFrame(
+        {
+            "obs": np.random.randn(10),
+            "obs_se": 0.2 + np.random.rand(10),
+            "var": np.random.randn(10),
+            "intercept": 1.0,
+        }
+    )
 
 
 @pytest.fixture
@@ -56,10 +59,7 @@ def uprior():
 
 @pytest.fixture
 def variables(gprior, uprior):
-    return [
-        Variable("intercept"),
-        Variable("var", priors=[gprior, uprior])
-    ]
+    return [Variable("intercept"), Variable("var", priors=[gprior, uprior])]
 
 
 def test_mat(data, variables, df):
@@ -70,8 +70,7 @@ def test_mat(data, variables, df):
 def test_gprior(data, variables, df):
     model = SFMAModel(data, variables, df=df)
     linear_gvec = model.parameter.prior_dict["direct"]["GaussianPrior"].params
-    assert np.allclose(linear_gvec,
-                       np.array([[0.0, 0.0], [np.inf, 1.0]]))
+    assert np.allclose(linear_gvec, np.array([[0.0, 0.0], [np.inf, 1.0]]))
 
 
 def test_uprior(data, variables, df):
@@ -79,7 +78,7 @@ def test_uprior(data, variables, df):
     assert np.allclose(model.cvec, np.array([0.0, 1.0]))
 
 
-@pytest.mark.parametrize("beta", [np.arange(2)*1.0, np.ones(2)])
+@pytest.mark.parametrize("beta", [np.arange(2) * 1.0, np.ones(2)])
 def test_gradient_beta(data, variables, df, beta):
     model = SFMAModel(data, variables, True, True, df=df)
     my_gradient = model.gradient_beta(beta)
@@ -87,7 +86,7 @@ def test_gradient_beta(data, variables, df, beta):
     assert np.allclose(my_gradient, tr_gradient)
 
 
-@pytest.mark.parametrize("beta", [np.arange(2)*1.0, np.ones(2)])
+@pytest.mark.parametrize("beta", [np.arange(2) * 1.0, np.ones(2)])
 def test_hessian_beta(data, variables, df, beta):
     model = SFMAModel(data, variables, True, True, df=df)
     my_hess = model.hessian_beta(beta)
