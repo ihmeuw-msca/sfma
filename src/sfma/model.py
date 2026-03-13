@@ -15,7 +15,7 @@ from msca.optim.prox import proj_capped_simplex
 from msca.optim.solver import IPSolver, NTSolver
 from numpy.typing import NDArray
 from pandas import DataFrame
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize, minimize_scalar
 
 from sfma.data import Data
 
@@ -341,6 +341,25 @@ class SFMAModel:
             result = minimize_scalar(self.objective_gamma, **options)
             self.gamma = result.x
 
+    def _fit_eta_parametric(
+        self,
+        x: NDArray,
+        alpha: NDArray,
+        eta_floor: float = 1e-4,
+        alpha_bounds: tuple = ((-10, 10), (-5, 5)),
+    ) -> NDArray:
+        """Fit parametric eta(x) = exp(a0 + a1*x) via L-BFGS-B."""
+        def alpha_obj(params):
+            a0, a1 = params
+            self.eta = np.maximum(eta_floor, np.exp(a0 + a1 * x))
+            return float(self.weights.dot(self._objective()))
+
+        res = minimize(alpha_obj, alpha, method='L-BFGS-B',
+                       bounds=list(alpha_bounds))
+        alpha = res.x.copy()
+        self.eta = np.maximum(eta_floor, np.exp(alpha[0] + alpha[1] * x))
+        return alpha
+
     def _fit(
         self,
         max_iter: int = 20,
@@ -466,6 +485,67 @@ class SFMAModel:
         else:
             self.weights = np.ones(self.data.obs.value.size)
             self._fit(**options)
+
+    def fit_hetero(
+        self,
+        x: NDArray,
+        *,
+        warmstart_iters: int = 5,
+        max_iter: int = 100,
+        tol: float = 1e-6,
+        eta_floor: float = 1e-4,
+        eta_bounds: tuple = (0.0, 10.0),
+        gamma_bounds: tuple = (0.0, 10.0),
+        alpha_bounds: tuple = ((-10, 10), (-5, 5)),
+        outlier_pct: float = 0.0,
+        trim_max_iter: int = 15,
+        trim_step_size: float = 2.0,
+        verbose: bool = False,
+    ):
+        """Fit with parametric heteroscedastic eta(x) = exp(a0 + a1*x).
+
+        Warm-starts with standard scalar-eta BCD, then switches to
+        parametric eta optimization via L-BFGS-B.
+        """
+        x = np.asarray(x, dtype=float).ravel()
+
+        # Phase 1: warm-start with scalar eta
+        self.fit(
+            outlier_pct=outlier_pct,
+            trim_max_iter=trim_max_iter,
+            trim_step_size=trim_step_size,
+            max_iter=warmstart_iters,
+            tol=tol,
+            eta_options={"method": "bounded", "bounds": list(eta_bounds)},
+            gamma_options={"method": "bounded", "bounds": list(gamma_bounds)},
+        )
+
+        # Phase 2: parametric eta BCD
+        alpha = np.array([np.log(max(float(np.mean(self.eta)), eta_floor)), 0.0])
+
+        for it in range(max_iter):
+            old = np.hstack([self.beta, alpha, self.gamma])
+
+            self.eta = np.maximum(eta_floor, np.exp(alpha[0] + alpha[1] * x))
+            self._fit_beta()
+            self._fit_gamma(method="bounded", bounds=list(gamma_bounds))
+            alpha = self._fit_eta_parametric(
+                x, alpha, eta_floor=eta_floor, alpha_bounds=alpha_bounds,
+            )
+
+            new = np.hstack([self.beta, alpha, self.gamma])
+            error = np.max(np.abs(new - old))
+
+            if verbose:
+                obj = float(self.weights.dot(self._objective()))
+                print(
+                    f"  hetero iter={it+1:3d}, obj={obj:.4e}, "
+                    f"alpha=[{alpha[0]:.4f}, {alpha[1]:.4f}], "
+                    f"gamma={self.gamma:.4e}, error={error:.2e}"
+                )
+
+            if error < tol:
+                break
 
     def get_inefficiency(self) -> NDArray:
         """Estimate inefficiency.
